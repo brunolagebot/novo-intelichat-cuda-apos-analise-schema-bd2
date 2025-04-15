@@ -41,7 +41,6 @@ OVERVIEW_COUNTS_FILE = 'data/overview_counts.json' # NOVO: Arquivo para contagen
 DEFAULT_DB_PATH = r"C:\Projetos\DADOS.FDB" # Use raw string para evitar problemas com barras invertidas
 DEFAULT_DB_USER = "SYSDBA"
 # !! ATENÇÃO: Senha hardcoded não é seguro para produção !!
-DEFAULT_DB_PASSWORD = "M@nagers2023" 
 DEFAULT_DB_CHARSET = "WIN1252"
 
 # --- Dicionário de Explicações de Tipos SQL (pt-br) ---
@@ -363,7 +362,8 @@ def generate_documentation_overview(technical_schema, metadata, overview_counts)
     return df_overview
 
 # --- NOVA Função para buscar Timestamp da Última NFS --- 
-@st.cache_data(ttl=300) # Cache de 5 minutos
+# REMOVIDO CACHE - Buscar sob demanda
+#@st.cache_data(ttl=300) # Cache de 5 minutos
 def fetch_latest_nfs_timestamp(db_path, user, password, charset):
     """Busca a data/hora da última NFS emitida da VIEW_DASH_NFS."""
     conn = None
@@ -440,6 +440,10 @@ if 'metadata' not in st.session_state:
 if 'overview_counts' not in st.session_state:
     st.session_state.overview_counts = load_overview_counts(OVERVIEW_COUNTS_FILE)
 
+# NOVO: Inicializa estado para timestamp sob demanda
+if 'latest_db_timestamp' not in st.session_state:
+    st.session_state.latest_db_timestamp = None # Inicializa como None
+
 metadata_dict = st.session_state.metadata # Referência local
 
 # --- Barra Lateral --- 
@@ -448,7 +452,7 @@ st.sidebar.title("Navegação e Ações")
 # Seletor de Modo
 app_mode = st.sidebar.radio(
     "Modo de Operação",
-    ["Editar Metadados", "Visão Geral"],
+    ["Editar Metadados", "Visão Geral", "Análise"], # NOVO: Adicionado 'Análise'
     key='app_mode_selector'
 )
 st.sidebar.divider()
@@ -460,20 +464,44 @@ st.sidebar.subheader("Referência Banco de Dados")
 # !! Usando defaults hardcoded por enquanto !!
 db_path_for_ts = DEFAULT_DB_PATH
 db_user_for_ts = DEFAULT_DB_USER
-db_password_for_ts = DEFAULT_DB_PASSWORD # ATENÇÃO: Senha insegura
+# REMOVIDO: db_password_for_ts = DEFAULT_DB_PASSWORD # ATENÇÃO: Senha insegura
 db_charset_for_ts = DEFAULT_DB_CHARSET
+
+# NOVO: Lógica para obter a senha de st.secrets ou env var
+try:
+    # Prioridade: st.secrets (para deploy)
+    db_password_for_ts = st.secrets.get("database", {}).get("password")
+    if not db_password_for_ts:
+        # Fallback: Variável de ambiente (para local)
+        db_password_for_ts = os.getenv("FIREBIRD_PASSWORD")
+        if not db_password_for_ts:
+            st.error("Senha do banco Firebird não configurada em st.secrets ([database] > password) ou na variável de ambiente FIREBIRD_PASSWORD.")
+            st.stop()
+        else:
+            st.sidebar.warning("Usando senha da variável de ambiente FIREBIRD_PASSWORD.", icon="🔑")
+except Exception as e:
+    st.error(f"Erro ao tentar obter a senha do banco: {e}")
+    logger.error(f"Erro ao acessar st.secrets ou env var para senha: {e}")
+    st.stop()
 
 # Botão de atualização para o timestamp
 if st.sidebar.button("Atualizar Referência DB", key="refresh_db_ts"):
-    fetch_latest_nfs_timestamp.clear() # Limpa o cache da função
-    st.sidebar.success("Tentando atualizar...", icon="⏳")
-    # O rerun abaixo vai reexecutar e chamar a função cacheada (agora sem cache)
-    st.rerun()
+    # Busca o novo timestamp e atualiza o estado da sessão
+    st.session_state.latest_db_timestamp = fetch_latest_nfs_timestamp(
+        db_path_for_ts, db_user_for_ts, db_password_for_ts, db_charset_for_ts
+    )
+    st.sidebar.success("Referência DB atualizada!", icon="✅")
+    st.rerun() # Rerun para exibir o novo valor
 
-# Busca e exibe o timestamp (ou erro)
-latest_ts_result = fetch_latest_nfs_timestamp(
-    db_path_for_ts, db_user_for_ts, db_password_for_ts, db_charset_for_ts
-)
+# Busca o timestamp apenas se ainda não estiver no estado da sessão
+if st.session_state.latest_db_timestamp is None:
+    logger.info("Buscando timestamp inicial do DB...")
+    st.session_state.latest_db_timestamp = fetch_latest_nfs_timestamp(
+        db_path_for_ts, db_user_for_ts, db_password_for_ts, db_charset_for_ts
+    )
+
+# Busca e exibe o timestamp (ou erro) do ESTADO DA SESSÃO
+latest_ts_result = st.session_state.latest_db_timestamp
 
 if isinstance(latest_ts_result, datetime.datetime):
     # Formata para Data e Hora Brasileiras
@@ -492,9 +520,6 @@ elif isinstance(latest_ts_result, str):
 else:
     st.sidebar.metric(label="Última NFS Emitida", value="-")
     st.sidebar.caption("Status: Desconhecido")
-
-# Alerta de Segurança para Senha Hardcoded
-st.sidebar.warning("**Atenção:** A senha do banco está configurada no código. Use `st.secrets` ou variáveis de ambiente para produção.", icon="🔒")
 
 st.sidebar.divider()
 
@@ -792,6 +817,56 @@ elif app_mode == "Editar Metadados":
 
     else:
         st.info("Selecione um objeto para editar seus metadados.")
+
+# --- NOVO: Modo Análise ---
+elif app_mode == "Análise":
+    st.header("🔎 Análise do Schema")
+    st.caption(f"Analisando informações de: `{TECHNICAL_SCHEMA_FILE}`")
+    st.divider()
+
+    st.subheader("Colunas Mais Referenciadas por Chaves Estrangeiras (FKs)")
+    
+    if technical_schema_data and 'fk_reference_counts' in technical_schema_data:
+        fk_counts = technical_schema_data['fk_reference_counts']
+        
+        if not fk_counts:
+            st.info("Nenhuma contagem de referência de FK encontrada no schema técnico.")
+        else:
+            # Converter para lista de dicionários para o DataFrame
+            fk_list = []
+            for key, count in fk_counts.items():
+                try:
+                    table_name, column_name = key.split('.', 1)
+                    fk_list.append({"Tabela": table_name, "Coluna": column_name, "Nº Referências FK": count})
+                except ValueError:
+                    logger.warning(f"Formato inválido na chave fk_reference_counts: {key}")
+            
+            if not fk_list:
+                 st.warning("Não foi possível processar as contagens de FK.")
+            else:
+                # Ordenar pela contagem (descendente)
+                fk_list_sorted = sorted(fk_list, key=lambda x: x["Nº Referências FK"], reverse=True)
+                
+                df_fk_counts = pd.DataFrame(fk_list_sorted)
+                
+                # Opção para mostrar N top colunas
+                num_to_show = st.slider(
+                    "Mostrar Top N colunas mais referenciadas:", 
+                    min_value=5, 
+                    max_value=len(df_fk_counts), 
+                    value=min(20, len(df_fk_counts)), # Padrão 20 ou o total se menor
+                    step=5
+                )
+                
+                st.dataframe(df_fk_counts.head(num_to_show), use_container_width=True)
+                
+                # Expander para mostrar todas
+                with st.expander("Mostrar todas as colunas referenciadas"):
+                     st.dataframe(df_fk_counts, use_container_width=True)
+            
+    else:
+        st.error("Dados de contagem de referência de FK ('fk_reference_counts') não encontrados no arquivo de schema técnico.")
+        st.info(f"Certifique-se de que o script `scripts/extract_schema.py` ou `scripts/merge_schema_data.py` foi executado e gerou o arquivo `{TECHNICAL_SCHEMA_FILE}` corretamente.")
 
 # --- Ações Globais na Sidebar --- 
 st.sidebar.divider()

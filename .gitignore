@@ -153,4 +153,16 @@ results-*/
 *.ntvs*
 *.njsproj
 *.sln
-*.sw? 
+*.sw?
+
+# Arquivos de Segredos e Ambiente
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Arquivos Temporários
+*.tmp
+*.bak
+*.swp
+*~ 
