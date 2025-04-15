@@ -36,6 +36,8 @@ except Exception as e:
 METADATA_FILE = 'etapas-sem-gpu/schema_metadata.json'
 TECHNICAL_SCHEMA_FILE = 'data/combined_schema_details.json' # NOVO: Carregar dados técnicos combinados
 OVERVIEW_COUNTS_FILE = 'data/overview_counts.json' # NOVO: Arquivo para contagens cacheadas
+# NOVO: Definir o nome do arquivo de saída do merge para usar na mensagem
+OUTPUT_COMBINED_FILE = 'data/combined_schema_details.json'
 
 # --- Configurações Padrão de Conexão (Podem ser sobrescritas na interface) ---
 DEFAULT_DB_PATH = r"C:\Projetos\DADOS.FDB" # Use raw string para evitar problemas com barras invertidas
@@ -424,6 +426,63 @@ def fetch_latest_nfs_timestamp(db_path, user, password, charset):
             try: conn.close()
             except Exception: pass
 
+# --- NOVA Função para buscar amostra de dados --- 
+def fetch_sample_data(db_path, user, password, charset, table_name, num_rows=10):
+    """Busca as N primeiras linhas de uma tabela/view específica."""
+    conn = None
+    logger.info(f"Tentando buscar amostra de dados para {table_name} ({num_rows} linhas)...")
+    if num_rows <= 0:
+        logger.warning("Número de linhas para buscar deve ser positivo.")
+        return pd.DataFrame() # Retorna DataFrame vazio
+
+    try:
+        conn = fdb.connect(dsn=db_path, user=user, password=password, charset=charset)
+        cur = conn.cursor()
+        # Usar placeholders seguros para o nome da tabela NÃO é suportado diretamente
+        # para nomes de tabelas/identificadores pelo DB-API. Precisamos ter cuidado.
+        # Validar table_name minimamente (evitar injeção MUITO básica)
+        if not re.match(r"^[A-Z0-9_]+$", table_name.upper()):
+            raise ValueError(f"Nome de tabela inválido fornecido: {table_name}")
+            
+        # Construir a query com segurança (sem format string direta)
+        # Firebird 3.0+ suporta FETCH FIRST N ROWS ONLY
+        sql = f"SELECT * FROM \"{table_name}\" FETCH FIRST {int(num_rows)} ROWS ONLY"
+        
+        logger.debug(f"Executando query de amostra: {sql}")
+        cur.execute(sql)
+        
+        # Obter nomes das colunas da descrição do cursor
+        colnames = [desc[0] for desc in cur.description]
+        
+        # Obter os dados
+        data = cur.fetchall()
+        
+        cur.close()
+        conn.close()
+        logger.info(f"Amostra de dados obtida para {table_name}.")
+        
+        # Criar DataFrame Pandas
+        df = pd.DataFrame(data, columns=colnames)
+        return df
+        
+    except fdb.Error as e:
+        error_msg = f"Erro DB ao buscar amostra para {table_name}: {e.fb_message if hasattr(e, 'fb_message') else e}"
+        logger.error(error_msg, exc_info=True)
+        return error_msg # Retorna a string de erro
+    except ValueError as e:
+        error_msg = f"Erro ao buscar amostra para {table_name}: {e}"
+        logger.error(error_msg)
+        return error_msg # Retorna a string de erro
+    except Exception as e:
+        error_msg = f"Erro inesperado ao buscar amostra para {table_name}: {e}"
+        logger.exception(error_msg)
+        return error_msg # Retorna a string de erro
+    finally:
+        if conn and not conn.closed:
+            try: conn.close()
+            except Exception: pass
+# --- FIM NOVA Função ---
+
 # --- Interface Streamlit --- MODIFICADA PARA MODOS
 st.set_page_config(layout="wide")
 st.title("📝 Editor/Visualizador de Metadados do Schema") # Título mais genérico
@@ -708,7 +767,9 @@ elif app_mode == "Editar Metadados":
                 technical_columns = tech_obj_data.get("columns", [])
                 if not technical_columns: st.write("*Nenhuma coluna no schema técnico.*")
                 else:
-                    technical_column_names = sorted([c['name'] for c in technical_columns if 'name' in c])
+                    # MUDANÇA: Remover sorted() para usar a ordem física do DB
+                    # technical_column_names = sorted([c['name'] for c in technical_columns if 'name' in c])
+                    technical_column_names = [c['name'] for c in technical_columns if 'name' in c]
                     column_tabs = st.tabs(technical_column_names)
                     for i, col_name in enumerate(technical_column_names):
                         with column_tabs[i]:
@@ -718,14 +779,48 @@ elif app_mode == "Editar Metadados":
                             col_meta_data = columns_dict_meta[col_name]
                             if "description" not in col_meta_data: col_meta_data["description"] = ""
                             if "value_mapping_notes" not in col_meta_data: col_meta_data["value_mapping_notes"] = ""
-                            # ... (Resto da lógica da aba, usando col_meta_data, tech_col_data, etc.) ...
+
+                            # Obter dados técnicos da coluna
                             tech_col_data = next((c for c in technical_columns if c['name'] == col_name), None)
+                            if not tech_col_data: st.warning(f"Dados técnicos não encontrados para coluna '{col_name}'."); continue # Pula esta aba
+
                             col_type = tech_col_data.get('type', 'N/A')
                             col_nullable = tech_col_data.get('nullable', True)
                             type_explanation = get_type_explanation(col_type)
-                            st.markdown(f"**Tipo:** `{col_type}` {type_explanation} | **Anulável:** {'Sim' if col_nullable else 'Não'}")
+
+                            # --- INÍCIO: Obter info de PK/FK ---
+                            constraints = tech_obj_data.get('constraints', {})
+                            key_info = []
+                            # Check Primary Key
+                            for pk in constraints.get('primary_key', []):
+                                if col_name in pk.get('columns', []):
+                                    key_info.append("🔑 PK")
+                                    break # Sai do loop PK
+                            # Check Foreign Keys (só se não for PK)
+                            if not key_info: 
+                                for fk in constraints.get('foreign_keys', []):
+                                    if col_name in fk.get('columns', []):
+                                        try:
+                                            idx = fk['columns'].index(col_name)
+                                            ref_table = fk.get('references_table', '?')
+                                            # Garante que references_columns existe e tem o índice
+                                            ref_cols = fk.get('references_columns', [])
+                                            ref_col = ref_cols[idx] if idx < len(ref_cols) else '?'
+                                            key_info.append(f"🔗 FK -> {ref_table}.{ref_col}")
+                                        except (IndexError, ValueError, KeyError):
+                                            key_info.append("🔗 FK (Erro ao mapear ref)")
+                                        break # Sai do loop FK
+
+                            key_info_str = f" | {' | '.join(key_info)}" if key_info else ""
+                            # --- FIM: Obter info de PK/FK ---
+
+                            # Exibe Tipo, Nulidade e Chaves
+                            st.markdown(f"**Tipo:** `{col_type}` {type_explanation} | **Anulável:** {'Sim' if col_nullable else 'Não'}{key_info_str}")
                             st.markdown("--- Descrição --- ")
-                            # ... (Heurística, Desc Area, Botões IA/Propagar) ...
+
+                            # Heurística e Área de Texto (Código existente, adaptado para usar estado da sessão)
+
+                            # Heurística, Desc Area, Botões IA/Propagar
                             col_desc_key = f"desc_{selected_object_technical_type}_{selected_object}_{col_name}"
                             # --- INÍCIO: Código de Text Area para Descrição e Notas (Re-inserido) ---
                             current_col_desc_saved = col_meta_data.get('description', '').strip()
@@ -771,8 +866,9 @@ elif app_mode == "Editar Metadados":
                                 
                                 # Botão Propagar
                                 description_to_propagate = col_meta_data.get('description', '').strip()
+                                notes_to_propagate = col_meta_data.get('value_mapping_notes', '').strip()
                                 if description_to_propagate:
-                                    if st.button("Propagar 🔁", key=f"propagate_{col_name}", help="Preenche esta descrição em colunas vazias equivalentes", use_container_width=True):
+                                    if st.button("Propagar 🔁", key=f"propagate_{col_name}", help="Preenche esta descrição e notas em colunas vazias equivalentes", use_container_width=True):
                                         source_concept = get_column_concept(technical_schema_data, selected_object, col_name)
                                         propagated_count = 0
                                         # Iterar sobre todos os objetos e colunas nos metadados para propagar
@@ -783,14 +879,20 @@ elif app_mode == "Editar Metadados":
                                                 if 'COLUMNS' not in obj_meta_prop: continue
                                                 for col_name_prop, col_meta_prop_target in obj_meta_prop['COLUMNS'].items(): # Renomeado para evitar conflito
                                                     if obj_name_prop == selected_object and col_name_prop == col_name: continue
-                                                    is_target_empty = not col_meta_prop_target.get('description', '').strip()
-                                                    if is_target_empty:
+                                                    # MUDANÇA: Condição baseada apenas na descrição vazia
+                                                    is_target_desc_empty = not col_meta_prop_target.get('description', '').strip()
+                                                    if is_target_desc_empty:
                                                         target_concept = get_column_concept(technical_schema_data, obj_name_prop, col_name_prop)
                                                         if target_concept == source_concept:
+                                                            # MUDANÇA: Propaga descrição E notas
                                                             st.session_state.metadata[obj_type_prop][obj_name_prop]['COLUMNS'][col_name_prop]['description'] = description_to_propagate
+                                                            st.session_state.metadata[obj_type_prop][obj_name_prop]['COLUMNS'][col_name_prop]['value_mapping_notes'] = notes_to_propagate
                                                             propagated_count += 1
-                                        if propagated_count > 0: st.toast(f"Descrição propagada para {propagated_count} coluna(s) vazia(s).", icon="✅")
-                                        else: st.toast("Nenhuma coluna vazia correspondente encontrada.", icon="ℹ️")
+                                        if propagated_count > 0:
+                                            # MUDANÇA: Mensagem atualizada
+                                            st.toast(f"Descrição e Notas propagadas para {propagated_count} coluna(s) com descrição vazia.", icon="✅")
+                                        else: 
+                                            st.toast("Nenhuma coluna correspondente com descrição vazia encontrada.", icon="ℹ️")
 
                             # Notas de Mapeamento
                             st.markdown("--- Notas de Mapeamento --- ")
@@ -805,6 +907,41 @@ elif app_mode == "Editar Metadados":
                             )
                             col_meta_data["value_mapping_notes"] = new_col_notes
                             # --- FIM: Código de Text Area para Descrição e Notas (Re-inserido) ---
+
+            st.divider() # Separador antes da pré-visualização
+
+            # --- NOVO: Seção de Pré-visualização de Dados ---
+            with st.expander("👁️ Pré-Visualização de Dados", expanded=False):
+                num_rows_to_fetch = st.number_input(
+                    "Número de linhas para buscar:", 
+                    min_value=1, 
+                    # max_value=500, # REMOVIDO: Permitir valores maiores
+                    value=10, 
+                    step=1, # Mudar step para 1 para facilitar digitação de qualquer número
+                    key=f"num_rows_{selected_object}",
+                    help="Digite o número de linhas desejado. Valores muito altos podem impactar o desempenho."
+                )
+                st.caption("⚠️ Solicitar muitas linhas pode tornar a aplicação lenta ou consumir muita memória.")
+                
+                if st.button("Carregar Amostra", key=f"load_sample_{selected_object}"):
+                    # Usa os mesmos parâmetros de conexão da busca de timestamp
+                    sample_data = fetch_sample_data(
+                        db_path_for_ts,
+                        db_user_for_ts,
+                        db_password_for_ts,
+                        db_charset_for_ts,
+                        selected_object, # Nome da tabela/view atual
+                        num_rows_to_fetch
+                    )
+                    
+                    if isinstance(sample_data, pd.DataFrame):
+                        if sample_data.empty:
+                            st.info(f"Nenhuma amostra de dados retornada para '{selected_object}'. A tabela pode estar vazia.")
+                        else:
+                            st.dataframe(sample_data, use_container_width=True)
+                    else: # Se retornou uma string de erro
+                        st.error(f"Falha ao carregar amostra: {sample_data}")
+            # --- FIM: Seção de Pré-visualização de Dados ---
 
             # --- Botão Salvar Edição --- 
             st.divider()
@@ -837,7 +974,32 @@ elif app_mode == "Análise":
             for key, count in fk_counts.items():
                 try:
                     table_name, column_name = key.split('.', 1)
-                    fk_list.append({"Tabela": table_name, "Coluna": column_name, "Nº Referências FK": count})
+                    
+                    # --- NOVO: Verifica metadados da coluna --- 
+                    has_description = False
+                    has_notes = False
+                    # Acessa o schema técnico combinado já carregado
+                    obj_data = technical_schema_data.get(table_name)
+                    if obj_data:
+                        columns_list = obj_data.get('columns', [])
+                        # Encontra os dados da coluna específica pelo nome
+                        col_data = next((col for col in columns_list if col.get('name') == column_name), None)
+                        if col_data:
+                            # Verifica se a descrição de negócio (adicionada pelo merge) existe e não está vazia
+                            desc_value = col_data.get('business_description')
+                            has_description = bool(desc_value and desc_value.strip())
+                            # Verifica se as notas de mapeamento (adicionadas pelo merge) existem e não estão vazias
+                            notes_value = col_data.get('value_mapping_notes')
+                            has_notes = bool(notes_value and notes_value.strip())
+                    # --- FIM NOVO ---
+                    
+                    fk_list.append({
+                        "Tabela": table_name, 
+                        "Coluna": column_name, 
+                        "Nº Referências FK": count,
+                        "Tem Descrição?": "✅" if has_description else "❌", # NOVO
+                        "Tem Notas?": "✅" if has_notes else "❌" # NOVO
+                        })
                 except ValueError:
                     logger.warning(f"Formato inválido na chave fk_reference_counts: {key}")
             
@@ -881,6 +1043,52 @@ if st.sidebar.button("Recarregar Metadados do Arquivo", key="reload_metadata_sid
         st.error("Falha ao recarregar metadados.")
 
 st.sidebar.caption(f"Arquivo: {METADATA_FILE}")
+
+# --- NOVO: Botão para Executar Merge ---
+st.sidebar.divider()
+st.sidebar.subheader("Processamento de Dados")
+if st.sidebar.button("Executar Merge de Dados", key="run_merge_script"):
+    script_path = os.path.join("scripts", "merge_schema_data.py")
+    if not os.path.exists(script_path):
+        st.sidebar.error(f"Erro: Script de merge não encontrado em '{script_path}'")
+    else:
+        st.sidebar.info(f"Executando '{script_path}'...")
+        try:
+            python_executable = sys.executable 
+            process = subprocess.Popen(
+                [python_executable, script_path],
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE,
+                text=True, 
+                encoding='utf-8',
+                errors='replace'
+            )
+            
+            # Ler stdout e stderr completos
+            stdout, stderr = process.communicate()
+            
+            logger.info(f"Saída stdout do merge script:\n{stdout}")
+            if stderr:
+                logger.error(f"Saída stderr do merge script:\n{stderr}")
+
+            if process.returncode == 0:
+                st.sidebar.success(f"Merge concluído com sucesso! Arquivo '{OUTPUT_COMBINED_FILE}' atualizado.")
+                # Limpar cache e recarregar app para refletir mudanças
+                try:
+                    load_technical_schema.clear()
+                    logger.info("Cache do schema técnico limpo após merge.")
+                    st.rerun()
+                except Exception as e:
+                    logger.warning(f"Erro ao limpar cache/rerun após merge: {e}")
+                    st.sidebar.warning("Merge concluído, mas recarregue a página para ver as atualizações.")
+            else:
+                st.sidebar.error(f"Erro ao executar merge (Código: {process.returncode}). Verifique os logs.")
+                if stderr:
+                    st.sidebar.text_area("Erro Reportado:", stderr, height=100)
+        except Exception as e:
+            st.sidebar.error(f"Erro inesperado ao executar merge: {e}")
+            logger.exception("Erro ao executar subprocesso de merge")
+# --- FIM: Botão para Executar Merge ---
 
 # Informação sobre como rodar
 st.sidebar.info("Para executar este app, use o comando: `streamlit run streamlit_app.py` no seu terminal.") 

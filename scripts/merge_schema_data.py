@@ -117,6 +117,12 @@ if __name__ == "__main__":
     if technical_data and metadata:
         combined_schema = merge_schema_data(technical_data, metadata)
         if combined_schema:
+             # Mantém as contagens do arquivo técnico original, se existirem
+             if 'fk_reference_counts' in technical_data:
+                 combined_schema['fk_reference_counts'] = technical_data['fk_reference_counts']
+                 logger.info("Chave 'fk_reference_counts' preservada do schema técnico.")
+             else:
+                 logger.warning("Chave 'fk_reference_counts' não encontrada no schema técnico para preservar.")
              save_combined_data(combined_schema, OUTPUT_COMBINED_FILE)
     else:
         logger.error("Falha ao carregar um ou ambos os arquivos de schema. Mesclagem abortada.")

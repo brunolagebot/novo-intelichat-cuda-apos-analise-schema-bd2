@@ -1,98 +1,91 @@
-# Projeto de Fine-Tuning Llama 3 8B Instruct
+# Projeto de Documentação e Análise de Schema Firebird com LLM
 
-Este projeto demonstra como realizar o fine-tuning do modelo Llama 3 8B Instruct usando a biblioteca `transformers` e a técnica PEFT (LoRA) em um dataset personalizado e, em seguida, usar o modelo ajustado para inferência.
+Este projeto visa extrair, documentar interativamente e analisar o schema de um banco de dados Firebird (`DADOS.FDB`), além de facilitar o fine-tuning de um modelo de linguagem grande (LLM) com esse conhecimento específico.
 
-## Estrutura do Projeto
+## Status Atual (Julho 2024)
 
-```
-/
-├── scripts/
-│   ├── create_dataset.py    # Script para criar/formatar o dataset (exemplo)
-│   ├── run_finetune.py      # Script para executar o fine-tuning LoRA
-│   └── run_inference.py     # Script para carregar o modelo ajustado e interagir
-├── data/
-│   └── dataset.jsonl        # Dataset de exemplo formatado
-├── results-llama3-8b-chat-adapter/ # Diretório de saída do fine-tuning (adaptador LoRA)
-│   └── ...
-├── app.py                   # (Script inicial, pode ser removido ou adaptado)
-└── requirements.txt         # Dependências Python
-└── README.md                # Este arquivo
-```
+*   **Extração de Schema Técnico:** O script `scripts/extract_schema.py` conecta ao banco Firebird, extrai detalhes de tabelas, views, colunas (tipos, nulidade, descrições do DB), constraints (PK, FK, Unique) e calcula contagens de referência de chaves estrangeiras (`fk_reference_counts`). Salva em `data/technical_schema_details.json`.
+*   **Editor/Analisador de Metadados (Streamlit):** A aplicação `streamlit_app.py` permite:
+    *   **Editar Metadados:** Adicionar/modificar descrições de negócio e notas de mapeamento para tabelas, views e colunas. As edições são salvas em `etapas-sem-gpu/schema_metadata.json`. Utiliza heurísticas e sugestões de IA (via Ollama, se disponível) para auxiliar na documentação.
+    *   **Visão Geral:** Exibe um resumo do status da documentação (percentual de descrição/notas), contagem de linhas (via cache ou execução sob demanda do `scripts/calculate_row_counts.py`), e data da última contagem.
+    *   **Análise:** Mostra as colunas mais referenciadas por chaves estrangeiras, com base nos dados pré-calculados.
+*   **Mesclagem de Dados:** O script `scripts/merge_schema_data.py` combina os dados técnicos de `technical_schema_details.json` com os metadados manuais de `schema_metadata.json`, gerando `data/combined_schema_details.json`, que é usado pelos modos "Visão Geral" e "Análise" do Streamlit.
+*   **Fine-tuning do LLM:** Um fine-tuning do modelo **Llama 3 8B Instruct** foi realizado utilizando os dados do schema. O adaptador LoRA resultante e as métricas de treinamento estão salvos no diretório `results-llama3-8b-chat-schema-adapter`. O treinamento alcançou uma perda (loss) final de aproximadamente 0.70 após ~84 horas.
+*   **Próxima Etapa:** Implementar a inferência para utilizar o modelo Llama 3 base com o adaptador LoRA treinado (`results-llama3-8b-chat-schema-adapter`) para responder perguntas sobre o schema.
 
-## Configuração do Ambiente
+## Componentes Principais
 
-1.  **Clone o repositório (se aplicável):**
-    ```bash
-    git clone <url_do_seu_repositorio>
-    cd <nome_do_diretorio>
-    ```
+*   **`scripts/`**:
+    *   `extract_schema.py`: Extrai schema técnico do Firebird.
+    *   `calculate_row_counts.py`: Calcula contagem de linhas das tabelas/views (executado via Streamlit ou manualmente).
+    *   `merge_schema_data.py`: Combina schema técnico e metadados manuais.
+    *   `analyze_schema.py`: Gera análises básicas do schema (ex: tabelas/colunas mais referenciadas).
+    *   `generate_schema_doc.py`: Gera documentação Markdown do schema.
+    *   `run_finetune_schema_phi3.py`: (OBSOLETO/REFERÊNCIA) Script configurado para treinar Phi-3 (o treinamento efetivo usou Llama 3).
+*   **`streamlit_app.py`**: Aplicação principal para visualização, edição e análise.
+*   **`data/`**:
+    *   `technical_schema_details.json`: Saída do `extract_schema.py`.
+    *   `combined_schema_details.json`: Saída do `merge_schema_data.py`, usado pelo Streamlit.
+    *   `overview_counts.json`: Cache das contagens de linhas.
+*   **`etapas-sem-gpu/`**:
+    *   `schema_metadata.json`: Armazena as descrições/notas manuais editadas via Streamlit.
+    *   `ESTADO_TREINAMENTO_MODELO.md`: Documenta o processo de treinamento (a ser atualizado).
+    *   *(Outros arquivos de referência/etapas anteriores)*
+*   **`results-llama3-8b-chat-schema-adapter/`**: Contém o adaptador LoRA treinado e métricas do fine-tuning do Llama 3 8B com os dados do schema.
+*   **`results-llama3-8b-chat-adapter/`**: Contém resultados de outro treinamento (provavelmente um teste ou tarefa diferente).
+*   **`docs/`**:
+    *   `schema_documentation.md`: Documentação gerada pelo `generate_schema_doc.py`.
 
-2.  **Crie e ative um ambiente virtual:**
+## Fluxo de Trabalho Típico
+
+1.  **(Opcional, se estrutura do DB mudou)** Executar `python scripts/extract_schema.py` para obter a estrutura técnica mais recente e recalcular contagens de FK.
+2.  Executar `streamlit run streamlit_app.py`.
+3.  No modo "Editar Metadados", navegar pelos objetos e adicionar/refinar descrições e notas. Salvar as alterações.
+4.  **(Opcional)** No modo "Visão Geral", executar o cálculo de contagem de linhas, se necessário.
+5.  Executar `python scripts/merge_schema_data.py` para atualizar o `combined_schema_details.json` com as últimas informações técnicas e manuais. Isso atualizará os dados exibidos na "Visão Geral" e "Análise".
+6.  **(Opcional)** Executar `python scripts/generate_schema_doc.py` para gerar a documentação Markdown.
+7.  **(Futuro)** Usar o adaptador LoRA treinado em `results-llama3-8b-chat-schema-adapter` com o modelo base Llama 3 8B para realizar inferência e responder perguntas sobre o schema.
+
+## Configuração
+
+1.  **Clone o repositório.**
+2.  **Crie um ambiente virtual:**
     ```bash
     python -m venv .venv
-    # Windows (PowerShell/CMD)
-    .\.venv\Scripts\activate
-    # Linux/macOS
-    # source .venv/bin/activate 
+    source .venv/bin/activate # Linux/macOS
+    # ou
+    .venv\\Scripts\\activate # Windows
     ```
-
 3.  **Instale as dependências:**
-    Certifique-se de ter o `requirements.txt` criado anteriormente.
     ```bash
     pip install -r requirements.txt
     ```
-    *Observação: A instalação pode levar algum tempo, especialmente para `torch`.* 
+4.  **Configure o `.env`:** Crie um arquivo `.env` na raiz do projeto com as credenciais e caminho do banco Firebird:
+    ```dotenv
+    FIREBIRD_HOST=seu_host_ou_ip
+    FIREBIRD_PORT=3050
+    FIREBIRD_DB_PATH=C:\\Caminho\\Para\\Seu\\DADOS.FDB # Atenção às barras no Windows
+    FIREBIRD_USER=SYSDBA
+    FIREBIRD_PASSWORD=sua_senha
+    FIREBIRD_CHARSET=WIN1252
 
-4.  **Login no Hugging Face (Necessário para Llama 3):**
-    Você precisará de um token de acesso do Hugging Face com permissão para usar o Llama 3.
+    # Opcional: Para integração Ollama no Streamlit
+    # OLLAMA_BASE_URL=http://localhost:11434
+    # OLLAMA_MODEL=llama3:8b-instruct-q5_K_M # Ou outro modelo Ollama
+    
+    # Opcional: Token Hugging Face (se necessário para baixar modelos)
+    # HF_TOKEN=seu_token_hf
+    ```
+5.  **(Opcional: Ollama)** Se for usar as sugestões de IA no Streamlit, certifique-se de que o Ollama esteja instalado, rodando e com o modelo especificado (`OLLAMA_MODEL`) disponível.
+
+## Como Executar
+
+*   **Editor/Analisador Streamlit:**
     ```bash
-    huggingface-cli login
-    # Cole seu token quando solicitado
+    streamlit run streamlit_app.py
     ```
+*   **Scripts Individuais:** Execute os scripts individuais conforme necessário (veja Fluxo de Trabalho).
 
-## Preparação dos Dados
+## Contribuição
 
--   O fine-tuning espera um dataset no formato JSON Lines (`.jsonl`), onde cada linha é um objeto JSON.
--   Para o `SFTTrainer` com o formato de chat do Llama 3, cada linha deve idealmente conter uma chave (por exemplo, `"messages"`) com uma lista de dicionários, cada um com `"role"` (`"system"`, `"user"`, `"assistant"`) e `"content"`.
--   Exemplo (`data/dataset.jsonl`):
-    ```json
-    {"messages": [{"role": "user", "content": "Qual a capital da França?"}, {"role": "assistant", "content": "A capital da França é Paris."}]}
-    {"messages": [{"role": "user", "content": "Você pode me ajudar com matemática?"}, {"role": "assistant", "content": "Sim, posso ajudar com matemática! Que tipo de problema você tem?"}]}
-    ```
--   Você pode adaptar ou usar o script `scripts/create_dataset.py` como ponto de partida para formatar seus próprios dados.
-
-## Executando o Fine-Tuning
-
--   Após configurar o ambiente e preparar o dataset (`data/dataset.jsonl` por padrão), execute o script de fine-tuning:
-
-    ```bash
-    python scripts/run_finetune.py
-    ```
--   Este script irá:
-    -   Carregar o modelo base Llama 3 8B Instruct.
-    -   Carregar o dataset.
-    -   Configurar e aplicar o adaptador LoRA.
-    -   Executar o treinamento por 1 época (padrão).
-    -   Salvar o adaptador treinado em `./results-llama3-8b-chat-adapter`.
-    -   Executar um teste rápido de geração.
-
-## Usando o Modelo Ajustado (Inferência)
-
--   Após o fine-tuning ter sido concluído com sucesso e o adaptador salvo, você pode usar o script de inferência para interagir com o modelo ajustado:
-
-    ```bash
-    python scripts/run_inference.py
-    ```
--   Este script irá:
-    -   Carregar o modelo base Llama 3 8B Instruct.
-    -   Carregar e aplicar o adaptador LoRA de `./results-llama3-8b-chat-adapter`.
-    -   Entrar em um loop onde você pode digitar prompts e ver as respostas geradas pelo modelo ajustado.
-    -   Digite `sair` para encerrar.
-
-## Próximos Passos Possíveis
-
--   Experimentar com mais dados de treinamento.
--   Ajustar hiperparâmetros no `run_finetune.py` (e.g., `num_train_epochs`, `learning_rate`, configurações LoRA).
--   Avaliar o modelo ajustado de forma mais rigorosa (usando métricas e um dataset de validação/teste separado).
--   Integrar o modelo ajustado em uma aplicação maior.
--   Explorar outras técnicas de PEFT ou fine-tuning completo (requer mais recursos computacionais). 
+Contribuições são bem-vindas. Siga as práticas padrão de fork e pull request. 
