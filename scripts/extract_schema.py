@@ -1,36 +1,290 @@
-import fdb
+import fdb # ADICIONADO: Import da biblioteca Firebird
 import logging
 import json
 import sys
 import os
 from dotenv import load_dotenv
+import getpass # Para senha, se não estiver no .env
+from collections import defaultdict
 
-# Adicionado: Carregar variáveis de ambiente do arquivo .env
+# Carregar variáveis de ambiente
 load_dotenv()
 
 # Configuração básica de logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-# --- Configurações da Conexão Firebird (Lidas do Ambiente) ---
+# --- Configurações (Lidas do Ambiente ou Padrão) ---
 FIREBIRD_HOST = os.getenv("FIREBIRD_HOST", "localhost")
-FIREBIRD_PORT = int(os.getenv("FIREBIRD_PORT", "3050")) # Converte para int
-FIREBIRD_DB_PATH = os.getenv("FIREBIRD_DB_PATH") # Essencial ter no .env
+FIREBIRD_PORT = int(os.getenv("FIREBIRD_PORT", "3050"))
+FIREBIRD_DB_PATH = os.getenv("FIREBIRD_DB_PATH")
 FIREBIRD_USER = os.getenv("FIREBIRD_USER", "SYSDBA")
-FIREBIRD_PASSWORD = os.getenv("FIREBIRD_PASSWORD") # Essencial ter no .env
-FIREBIRD_CHARSET = os.getenv("FIREBIRD_CHARSET", "WIN1252")
+FIREBIRD_PASSWORD = os.getenv("FIREBIRD_PASSWORD") # Tenta ler do .env primeiro
+FIREBIRD_CHARSET = os.getenv("FIREBIRD_CHARSET", "WIN1252") # Usar o que funcionou
 
-# Verifica se as variáveis essenciais foram carregadas
-if not FIREBIRD_DB_PATH or not FIREBIRD_PASSWORD:
-    logging.error("Erro: Variáveis FIREBIRD_DB_PATH ou FIREBIRD_PASSWORD não definidas no .env ou ambiente.")
-    sys.exit(1)
+OUTPUT_JSON_FILE = 'data/technical_schema_details.json' # Arquivo de saída com detalhes técnicos
 
-# --- Configuração de Saída ---
-OUTPUT_FILE = 'data/schema_dataset.jsonl' # Arquivo para o dataset de fine-tuning
+# --- Funções de Extração (Adaptadas de util-extract_firebird_schema.py) ---
 
-def get_firebird_connection():
-    """Estabelece e retorna uma conexão com o banco Firebird."""
+def get_column_details(cur, relation_name):
+    """Busca detalhes das colunas para uma dada tabela/view."""
+    # ... (Lógica de get_column_details do util-extract_firebird_schema.py) ...
+    sql = """
+        SELECT
+            TRIM(rf.RDB$FIELD_NAME) AS FIELD_NAME,
+            f.RDB$FIELD_TYPE AS FIELD_TYPE,
+            f.RDB$FIELD_SUB_TYPE AS FIELD_SUB_TYPE,
+            f.RDB$FIELD_LENGTH AS FIELD_LENGTH,
+            f.RDB$FIELD_PRECISION AS FIELD_PRECISION,
+            f.RDB$FIELD_SCALE AS FIELD_SCALE,
+            COALESCE(rf.RDB$DESCRIPTION, f.RDB$DESCRIPTION) AS DESCRIPTION, -- Adicionado: Busca descrição
+            COALESCE(rf.RDB$NULL_FLAG, f.RDB$NULL_FLAG, 0) AS NULLABLE -- 0=NOT NULL, 1=NULL
+        FROM RDB$RELATION_FIELDS rf
+        JOIN RDB$FIELDS f ON rf.RDB$FIELD_SOURCE = f.RDB$FIELD_NAME
+        WHERE rf.RDB$RELATION_NAME = ?
+        ORDER BY rf.RDB$FIELD_POSITION;
+    """
     try:
-        logging.info(f"Conectando a {FIREBIRD_HOST}:{FIREBIRD_DB_PATH}...")
+        cur.execute(sql, (relation_name,))
+        columns = []
+        field_type_map = {
+            7: 'SMALLINT', 8: 'INTEGER', 10: 'FLOAT', 12: 'DATE',
+            13: 'TIME', 14: 'CHAR', 16: 'BIGINT', 27: 'DOUBLE PRECISION',
+            35: 'TIMESTAMP', 37: 'VARCHAR', 261: 'BLOB'
+        }
+
+        for row in cur.fetchallmap():
+            field_type_code = row['FIELD_TYPE']
+            field_type_name = field_type_map.get(field_type_code, f'UNKNOWN({field_type_code})')
+            type_details = ""
+
+            if field_type_name in ('CHAR', 'VARCHAR'):
+                type_details = f"({row['FIELD_LENGTH']})"
+            elif field_type_code == 261: # BLOB
+                subtype = row['FIELD_SUB_TYPE']
+                if subtype == 1: type_details = "(SUB_TYPE TEXT)"
+                else: type_details = f"(SUB_TYPE {subtype})"
+            # Verifica se é NUMERIC/DECIMAL (escala negativa)
+            elif row['FIELD_SCALE'] is not None and row['FIELD_SCALE'] < 0:
+                # Usar RDB$FIELD_PRECISION se disponível, senão aproximar
+                precision = row['FIELD_PRECISION'] if row['FIELD_PRECISION'] else row['FIELD_LENGTH'] * 2 # Chute se precisão for 0
+                scale = abs(row['FIELD_SCALE'])
+                field_type_name = "DECIMAL" # Ou NUMERIC
+                type_details = f"({precision},{scale})"
+            elif field_type_name in ['FLOAT', 'DOUBLE PRECISION']:
+                 pass # Geralmente não mostra precisão/escala
+
+            # Decodifica descrição se for bytes
+            description_bytes = row.get('DESCRIPTION')
+            description = None
+            if description_bytes:
+                try:
+                    description = description_bytes.decode(FIREBIRD_CHARSET, errors='replace')
+                except Exception:
+                    logger.warning(f"Não foi possível decodificar descrição para {relation_name}.{row['FIELD_NAME'].strip()}")
+                    description = repr(description_bytes) # Mostra representação binária
+
+            col_data = {
+                "name": row['FIELD_NAME'].strip(),
+                "type": field_type_name + type_details,
+                "nullable": bool(row['NULLABLE']),
+                "description": description # Adicionado
+            }
+            columns.append(col_data)
+        return columns
+    except Exception as e:
+        logger.error(f"Erro ao buscar detalhes de coluna para {relation_name}: {e}", exc_info=True)
+        return []
+
+def get_constraint_details(cur, relation_name):
+    """Busca detalhes das constraints (PK, FK, Unique) para uma dada tabela."""
+    # ... (Lógica de get_constraint_details do util-extract_firebird_schema.py) ...
+    # Adiciona busca pela descrição da constraint
+    sql_constraints = """
+        SELECT
+            rc.RDB$CONSTRAINT_NAME AS CONSTRAINT_NAME,
+            rc.RDB$CONSTRAINT_TYPE AS CONSTRAINT_TYPE,
+            rc.RDB$INDEX_NAME AS LOCAL_INDEX_NAME,
+            fk.RDB$CONST_NAME_UQ AS REF_CONSTRAINT_NAME,
+            fk.RDB$UPDATE_RULE AS FK_UPDATE_RULE,
+            fk.RDB$DELETE_RULE AS FK_DELETE_RULE,
+            pk.RDB$RELATION_NAME AS FK_TARGET_TABLE,
+            pk.RDB$INDEX_NAME AS REF_INDEX_NAME
+        FROM RDB$RELATION_CONSTRAINTS rc
+        LEFT JOIN RDB$REF_CONSTRAINTS fk ON rc.RDB$CONSTRAINT_NAME = fk.RDB$CONSTRAINT_NAME
+        LEFT JOIN RDB$RELATION_CONSTRAINTS pk ON fk.RDB$CONST_NAME_UQ = pk.RDB$CONSTRAINT_NAME
+        WHERE rc.RDB$RELATION_NAME = ?
+        ORDER BY rc.RDB$CONSTRAINT_NAME;
+    """
+    sql_index_columns = """ -- Consulta genérica para colunas de um índice
+        SELECT TRIM(ix.RDB$FIELD_NAME) AS FIELD_NAME
+        FROM RDB$INDEX_SEGMENTS ix
+        WHERE ix.RDB$INDEX_NAME = ?
+        ORDER BY ix.RDB$FIELD_POSITION;
+    """
+    constraints = defaultdict(list)
+    try:
+        cur.execute(sql_constraints, (relation_name,))
+        for row in cur.fetchallmap():
+            constraint_name = row['CONSTRAINT_NAME'].strip()
+            constraint_type = row['CONSTRAINT_TYPE'].strip()
+            local_index_name = row['LOCAL_INDEX_NAME'].strip() if row['LOCAL_INDEX_NAME'] else None
+            ref_constraint_name = row['REF_CONSTRAINT_NAME'].strip() if row['REF_CONSTRAINT_NAME'] else None
+            ref_index_name = row['REF_INDEX_NAME'].strip() if row['REF_INDEX_NAME'] else None
+
+            local_columns = []
+            if local_index_name:
+                try:
+                    cur.execute(sql_index_columns, (local_index_name,))
+                    local_columns = [seg['FIELD_NAME'] for seg in cur.fetchallmap()]
+                except Exception as e:
+                    logger.warning(f"Erro ao buscar colunas locais para índice {local_index_name} da constraint {constraint_name}: {e}")
+            
+            referenced_columns = []
+            if constraint_type == 'FOREIGN KEY' and ref_index_name:
+                try:
+                    cur.execute(sql_index_columns, (ref_index_name,))
+                    referenced_columns = [seg['FIELD_NAME'] for seg in cur.fetchallmap()]
+                except Exception as e:
+                    logger.warning(f"Erro ao buscar colunas referenciadas para índice {ref_index_name} da FK {constraint_name}: {e}")
+
+            constraint_data = {
+                "name": constraint_name,
+                "columns": local_columns
+            }
+
+            if constraint_type == 'PRIMARY KEY':
+                constraints['primary_key'].append(constraint_data)
+            elif constraint_type == 'FOREIGN KEY':
+                constraint_data['references_table'] = row['FK_TARGET_TABLE'].strip() if row['FK_TARGET_TABLE'] else None
+                constraint_data['references_columns'] = referenced_columns 
+                constraint_data['update_rule'] = row['FK_UPDATE_RULE'].strip() if row['FK_UPDATE_RULE'] else 'RESTRICT'
+                constraint_data['delete_rule'] = row['FK_DELETE_RULE'].strip() if row['FK_DELETE_RULE'] else 'RESTRICT'
+                constraints['foreign_keys'].append(constraint_data)
+            elif constraint_type == 'UNIQUE':
+                constraints['unique'].append(constraint_data)
+            # Ignorar NOT NULL e CHECK por enquanto para simplificar
+            # elif constraint_type == 'NOT NULL':
+            #      constraints['not_null'].append(constraint_data)
+            # elif constraint_type == 'CHECK':
+            #     constraints['check'].append({"name": constraint_name, "expression": "<CHECK EXPRESSION NOT EXTRACTED>"})
+            # else:
+            #     constraint_data['type'] = constraint_type
+            #     constraints['other'].append(constraint_data)
+
+        return dict(constraints)
+    except Exception as e:
+         logger.error(f"Erro ao buscar constraints para {relation_name}: {e}", exc_info=True)
+         return {}
+
+def extract_technical_schema(conn):
+    """Extrai o schema técnico detalhado (tabelas, views, colunas, constraints)."""
+    schema = {}
+    if not conn:
+        return schema
+    try:
+        cur = conn.cursor()
+        logger.info("Extraindo tabelas e views...")
+        sql_relations = """
+            SELECT TRIM(RDB$RELATION_NAME) as NAME, RDB$VIEW_BLR, RDB$DESCRIPTION
+            FROM RDB$RELATIONS
+            WHERE RDB$SYSTEM_FLAG = 0 OR RDB$SYSTEM_FLAG IS NULL
+            ORDER BY RDB$RELATION_NAME;
+        """
+        cur.execute(sql_relations)
+
+        for row in cur.fetchallmap():
+            relation_name = row['NAME']
+            is_view = row['RDB$VIEW_BLR'] is not None
+            object_type = "VIEW" if is_view else "TABLE"
+            description_bytes = row.get('RDB$DESCRIPTION')
+            description = None
+            if description_bytes:
+                try:
+                    description = description_bytes.decode(FIREBIRD_CHARSET, errors='replace')
+                except Exception:
+                     logger.warning(f"Não foi possível decodificar descrição para {object_type} {relation_name}")
+                     description = repr(description_bytes)
+
+            logger.info(f"Processando {object_type}: {relation_name}...")
+            schema[relation_name] = {
+                "object_type": object_type,
+                "description": description,
+                "columns": get_column_details(cur, relation_name),
+                "constraints": get_constraint_details(cur, relation_name) 
+            }
+        cur.close()
+        logger.info(f"Extração de estrutura concluída. Total de objetos: {len(schema)}")
+        return schema
+    except Exception as e:
+        logger.error(f"Erro durante a extração do schema: {e}", exc_info=True)
+        return {}
+
+def calculate_fk_reference_counts(schema_data):
+    """Calcula quantas vezes cada tabela/coluna é referenciada por FKs."""
+    table_ref_counts = defaultdict(int)
+    column_ref_counts = defaultdict(lambda: defaultdict(int))
+    
+    logger.info("Calculando contagens de referência de FK...")
+    for relation_name, data in schema_data.items():
+        if data.get("object_type") == "TABLE":
+            for fk in data.get("constraints", {}).get("foreign_keys", []):
+                target_table = fk.get('references_table')
+                target_columns = fk.get('references_columns', [])
+                if target_table:
+                    table_ref_counts[target_table] += 1
+                    for i, target_col in enumerate(target_columns):
+                        # Tenta mapear coluna local para coluna referenciada pela posição
+                        local_col = fk["columns"][i] if i < len(fk["columns"]) else "?"
+                        logger.debug(f"FK Ref: {relation_name}.{local_col} -> {target_table}.{target_col}")
+                        column_ref_counts[target_table][target_col] += 1
+                        
+    logger.info("Cálculo de contagens de referência concluído.")
+    # Adiciona as contagens de volta à estrutura do schema para facilitar o acesso
+    for table_name, count in table_ref_counts.items():
+        if table_name in schema_data:
+             schema_data[table_name]["referenced_by_fk_count"] = count
+             
+    for table_name, col_counts in column_ref_counts.items():
+         if table_name in schema_data:
+            for col_name, count in col_counts.items():
+                # Encontra a coluna correspondente e adiciona a contagem
+                for col in schema_data[table_name].get("columns", []):
+                    if col["name"] == col_name:
+                        col["referenced_by_fk_count"] = count
+                        break
+                        
+    return schema_data # Retorna o schema modificado com as contagens
+
+
+def save_technical_details(schema_data, filename):
+    """Salva os detalhes técnicos do schema (com contagens) em JSON."""
+    logger.info(f"Salvando detalhes técnicos do schema em {filename}...")
+    try:
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(schema_data, f, indent=4, ensure_ascii=False)
+        logger.info("Detalhes técnicos salvos com sucesso.")
+    except IOError as e:
+        logger.error(f"Erro ao salvar o arquivo JSON: {e}")
+    except Exception as e:
+         logger.exception("Erro inesperado ao salvar o JSON técnico:")
+
+# --- Execução Principal ---
+if __name__ == "__main__":
+    # Verifica se a senha está no .env, senão pede
+    if not FIREBIRD_PASSWORD:
+        logger.warning("Senha do Firebird não encontrada no .env. Solicitando...")
+        FIREBIRD_PASSWORD = getpass.getpass(f"Digite a senha para o usuário '{FIREBIRD_USER}' em {FIREBIRD_HOST}: ")
+
+    # Verifica DB_PATH
+    if not FIREBIRD_DB_PATH:
+        logger.error("Erro: Variável FIREBIRD_DB_PATH não definida no .env ou ambiente.")
+        sys.exit(1)
+        
+    conn = None
+    try:
+        logger.info(f"Conectando a {FIREBIRD_HOST}:{FIREBIRD_DB_PATH}...")
         conn = fdb.connect(
             host=FIREBIRD_HOST,
             port=FIREBIRD_PORT,
@@ -39,267 +293,27 @@ def get_firebird_connection():
             password=FIREBIRD_PASSWORD,
             charset=FIREBIRD_CHARSET
         )
-        logging.info("Conexão estabelecida.")
-        return conn
-    except fdb.Error as e:
-        logging.error(f"Erro ao conectar ao Firebird: {e}", exc_info=True)
-        return None
-
-def get_schema_metadata(conn):
-    """Extrai metadados do schema (tabelas, views, colunas) do Firebird."""
-    schema = {"tables": {}, "views": {}}
-    if not conn:
-        return schema
-
-    try:
-        cur = conn.cursor()
-
-        # Buscar Tabelas de Usuário
-        logging.info("Buscando tabelas de usuário...")
-        cur.execute("""
-            SELECT TRIM(rdb$relation_name) 
-            FROM rdb$relations 
-            WHERE rdb$system_flag = 0 AND rdb$view_blr IS NULL
-            ORDER BY rdb$relation_name;
-        """)
-        tables = [row[0] for row in cur.fetchall()]
-        logging.info(f"Encontradas {len(tables)} tabelas.")
-
-        # Buscar Views de Usuário
-        logging.info("Buscando views...")
-        cur.execute("""
-            SELECT TRIM(rdb$relation_name) 
-            FROM rdb$relations 
-            WHERE rdb$system_flag = 0 AND rdb$view_blr IS NOT NULL
-            ORDER BY rdb$relation_name;
-        """)
-        views = [row[0] for row in cur.fetchall()]
-        logging.info(f"Encontradas {len(views)} views.")
-
-        # Para cada Tabela, buscar colunas
-        for table_name in tables:
-            logging.debug(f"Buscando colunas para tabela: {table_name}")
-            # Query para buscar nome da coluna, tipo e se é NOT NULL
-            # Nota: Determinar o tipo exato (VARCHAR(size), DECIMAL(p,s)) pode ser complexo
-            # Vamos simplificar pegando o nome do tipo base por enquanto
-            cur.execute("""
-                SELECT 
-                    TRIM(rf.rdb$field_name), 
-                    CASE f.rdb$field_type 
-                        WHEN 7 THEN 'SMALLINT' WHEN 8 THEN 'INTEGER' WHEN 10 THEN 'FLOAT' 
-                        WHEN 12 THEN 'DATE' WHEN 13 THEN 'TIME' WHEN 14 THEN 'CHAR' 
-                        WHEN 16 THEN 'BIGINT' WHEN 27 THEN 'DOUBLE PRECISION' 
-                        WHEN 35 THEN 'TIMESTAMP' WHEN 37 THEN 'VARCHAR' 
-                        WHEN 261 THEN 'BLOB' ELSE 'UNKNOWN' 
-                    END, 
-                    f.rdb$field_length, 
-                    f.rdb$field_scale, 
-                    f.rdb$field_sub_type, 
-                    IIF(rf.rdb$null_flag = 1, 'NOT NULL', 'NULLABLE')
-                FROM rdb$relation_fields rf 
-                JOIN rdb$fields f ON rf.rdb$field_source = f.rdb$field_name 
-                WHERE rf.rdb$relation_name = ? 
-                ORDER BY rf.rdb$field_position;
-            """, (table_name,))
+        logger.info("Conexão estabelecida.")
+        
+        technical_schema = extract_technical_schema(conn)
+        
+        if technical_schema:
+            schema_with_counts = calculate_fk_reference_counts(technical_schema)
+            save_technical_details(schema_with_counts, OUTPUT_JSON_FILE)
+        else:
+            logger.error("Falha ao extrair o schema técnico.")
+            sys.exit(1)
             
-            columns = []
-            for row in cur.fetchall():
-                col_name = row[0]
-                base_type = row[1]
-                length = row[2]
-                scale = row[3]
-                sub_type = row[4]
-                nullable = row[5]
-                
-                # Formatar tipo detalhado
-                col_type_details = base_type
-                if base_type in ('VARCHAR', 'CHAR'):
-                    col_type_details += f"({length})"
-                elif base_type == 'BLOB' and sub_type == 1:
-                     col_type_details = 'BLOB SUB_TYPE 1 (TEXT)'
-                elif base_type == 'BLOB':
-                     col_type_details += f" SUB_TYPE {sub_type}"
-                elif base_type in ('SMALLINT', 'INTEGER', 'BIGINT', 'DOUBLE PRECISION', 'FLOAT') and scale < 0:
-                    # Firebird usa escala negativa para DECIMAL/NUMERIC armazenado como inteiro
-                    precision = length # Aproximação, cálculo exato é mais complexo
-                    col_type_details = f"DECIMAL({precision}, {-scale})" 
-                
-                columns.append({"name": col_name, "type": col_type_details, "nullable": nullable})
-            schema["tables"][table_name] = columns
-            logging.debug(f"Colunas para {table_name}: {columns}")
-
-        # Para cada View, buscar colunas (mesma lógica)
-        for view_name in views:
-            logging.debug(f"Buscando colunas para view: {view_name}")
-            # A query é a mesma, pois views aparecem em rdb$relation_fields
-            cur.execute("""
-                SELECT 
-                    TRIM(rf.rdb$field_name), 
-                    CASE f.rdb$field_type 
-                        WHEN 7 THEN 'SMALLINT' WHEN 8 THEN 'INTEGER' WHEN 10 THEN 'FLOAT' 
-                        WHEN 12 THEN 'DATE' WHEN 13 THEN 'TIME' WHEN 14 THEN 'CHAR' 
-                        WHEN 16 THEN 'BIGINT' WHEN 27 THEN 'DOUBLE PRECISION' 
-                        WHEN 35 THEN 'TIMESTAMP' WHEN 37 THEN 'VARCHAR' 
-                        WHEN 261 THEN 'BLOB' ELSE 'UNKNOWN' 
-                    END, 
-                    f.rdb$field_length, 
-                    f.rdb$field_scale, 
-                    f.rdb$field_sub_type, 
-                    IIF(rf.rdb$null_flag = 1, 'NOT NULL', 'NULLABLE')
-                FROM rdb$relation_fields rf 
-                JOIN rdb$fields f ON rf.rdb$field_source = f.rdb$field_name 
-                WHERE rf.rdb$relation_name = ? 
-                ORDER BY rf.rdb$field_position;
-            """, (view_name,))
-            
-            columns = []
-            for row in cur.fetchall():
-                col_name = row[0]
-                base_type = row[1]
-                length = row[2]
-                scale = row[3]
-                sub_type = row[4]
-                nullable = row[5]
-                
-                col_type_details = base_type
-                if base_type in ('VARCHAR', 'CHAR'):
-                    col_type_details += f"({length})"
-                elif base_type == 'BLOB' and sub_type == 1:
-                     col_type_details = 'BLOB SUB_TYPE 1 (TEXT)'
-                elif base_type == 'BLOB':
-                     col_type_details += f" SUB_TYPE {sub_type}"
-                elif base_type in ('SMALLINT', 'INTEGER', 'BIGINT', 'DOUBLE PRECISION', 'FLOAT') and scale < 0:
-                    precision = length
-                    col_type_details = f"DECIMAL({precision}, {-scale})"
-                
-                columns.append({"name": col_name, "type": col_type_details, "nullable": nullable})
-            schema["views"][view_name] = columns
-            logging.debug(f"Colunas para {view_name}: {columns}")
-
-        cur.close()
-        logging.info("Extração de metadados do schema concluída.")
-
     except fdb.Error as e:
-        logging.error(f"Erro ao buscar metadados do Firebird: {e}", exc_info=True)
+        logger.error(f"Erro de conexão ou execução Firebird: {e}", exc_info=True)
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Erro inesperado no fluxo principal: {e}", exc_info=True)
+        sys.exit(1)
     finally:
         if conn and not conn.closed:
             conn.close()
-            logging.info("Conexão fechada.")
+            logger.info("Conexão principal fechada.")
 
-    return schema
-
-def format_schema_for_finetuning(schema):
-    """Formata os metadados do schema extraído em formato JSONL para SFTTrainer."""
-    dataset_entries = []
-
-    # 1. Perguntas gerais sobre tabelas e views
-    if schema["tables"]:
-        table_list = ", ".join(schema["tables"].keys())
-        dataset_entries.append({
-            "messages": [
-                {"role": "user", "content": "Quais são as tabelas de usuário neste banco de dados?"},
-                {"role": "assistant", "content": f"As tabelas de usuário são: {table_list}."}
-            ]
-        })
-    if schema["views"]:
-        view_list = ", ".join(schema["views"].keys())
-        dataset_entries.append({
-            "messages": [
-                {"role": "user", "content": "Quais views existem neste banco de dados?"},
-                {"role": "assistant", "content": f"As views existentes são: {view_list}."}
-            ]
-        })
-    if schema["tables"] and schema["views"]:
-        all_list = ", ".join(list(schema["tables"].keys()) + list(schema["views"].keys()))
-        dataset_entries.append({
-            "messages": [
-                {"role": "user", "content": "Liste todas as tabelas e views de usuário."},
-                {"role": "assistant", "content": f"As tabelas e views são: {all_list}."}
-            ]
-        })
-        
-    # 2. Perguntas sobre a estrutura de cada tabela
-    for table_name, columns in schema["tables"].items():
-        col_descriptions = []
-        for col in columns:
-            desc = f"{col['name']} ({col['type']}, {col['nullable']})"
-            col_descriptions.append(desc)
-        structure_desc = f"A tabela {table_name} possui as seguintes colunas: {', '.join(col_descriptions)}."
-        
-        # Pergunta sobre a descrição da tabela
-        dataset_entries.append({
-            "messages": [
-                {"role": "user", "content": f"Descreva a estrutura da tabela {table_name}."},
-                {"role": "assistant", "content": structure_desc}
-            ]
-        })
-        # Pergunta sobre quais colunas existem
-        column_names = ", ".join([col['name'] for col in columns])
-        dataset_entries.append({
-            "messages": [
-                {"role": "user", "content": f"Quais colunas existem na tabela {table_name}?"},
-                {"role": "assistant", "content": f"A tabela {table_name} contém as colunas: {column_names}."}
-            ]
-        })
-
-    # 3. Perguntas sobre a estrutura de cada view
-    for view_name, columns in schema["views"].items():
-        col_descriptions = []
-        for col in columns:
-            desc = f"{col['name']} ({col['type']}, {col['nullable']})"
-            col_descriptions.append(desc)
-        structure_desc = f"A view {view_name} possui as seguintes colunas: {', '.join(col_descriptions)}."
-        
-        # Pergunta sobre a descrição da view
-        dataset_entries.append({
-            "messages": [
-                {"role": "user", "content": f"Descreva a estrutura da view {view_name}."},
-                {"role": "assistant", "content": structure_desc}
-            ]
-        })
-        # Pergunta sobre quais colunas existem
-        column_names = ", ".join([col['name'] for col in columns])
-        dataset_entries.append({
-            "messages": [
-                {"role": "user", "content": f"Quais colunas existem na view {view_name}?"},
-                {"role": "assistant", "content": f"A view {view_name} contém as colunas: {column_names}."}
-            ]
-        })
-        
-    logging.info(f"Geradas {len(dataset_entries)} entradas para o dataset de fine-tuning.")
-    return dataset_entries
-
-def save_dataset_to_jsonl(dataset, filename):
-    """Salva o dataset formatado em um arquivo JSON Lines."""
-    try:
-        # Garante que o diretório de dados exista
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-        
-        with open(filename, 'w', encoding='utf-8') as f:
-            for entry in dataset:
-                json.dump(entry, f, ensure_ascii=False) # ensure_ascii=False para UTF-8 correto
-                f.write('\n')
-        logging.info(f"Dataset salvo com sucesso em {filename}")
-    except IOError as e:
-        logging.error(f"Erro ao salvar o dataset em {filename}: {e}", exc_info=True)
-    except Exception as e:
-        logging.error(f"Erro inesperado ao salvar o dataset: {e}", exc_info=True)
-
-# --- Execução Principal ---
-if __name__ == "__main__":
-    connection = get_firebird_connection()
-    if connection:
-        schema_data = get_schema_metadata(connection)
-        if schema_data["tables"] or schema_data["views"]:
-            formatted_dataset = format_schema_for_finetuning(schema_data)
-            if formatted_dataset:
-                save_dataset_to_jsonl(formatted_dataset, OUTPUT_FILE)
-            else:
-                logging.warning("Nenhum dado formatado para salvar.")
-        else:
-            logging.warning("Nenhuma tabela ou view de usuário encontrada no banco de dados. O dataset não será gerado.")
-    else:
-        logging.error("Não foi possível conectar ao banco. Saindo.")
-        sys.exit(1)
-
-    print(f"\nProcesso concluído. Verifique o arquivo {OUTPUT_FILE}") 
+    print(f"\nProcesso concluído. Detalhes técnicos salvos em {OUTPUT_JSON_FILE}")
+    print("Próximo passo: Use este arquivo JSON para gerar um template ou adicionar descrições manuais.") 

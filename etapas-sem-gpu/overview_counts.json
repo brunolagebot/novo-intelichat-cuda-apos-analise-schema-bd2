@@ -1,0 +1,122 @@
+{
+    "ABATE_CLASSIF_PECUARISTA": {
+        "count": 0,
+        "timestamp": "2025-04-14T12:21:22.155927"
+    },
+    "ABATE_COMPRADOR": {
+        "count": 0,
+        "timestamp": "2025-04-14T12:21:22.428036"
+    },
+    "ABATE_CONFIG_RECEBIMENTO_ANIMAL": {
+        "count": 0,
+        "timestamp": "2025-04-14T12:13:14.791718"
+    },
+    "TABELA_FILIAL_PARAM": {
+        "count": 1,
+        "timestamp": "2025-04-14T12:14:15.858794"
+    },
+    "VIEW_DASH_COMPRA_ANIMAL_PEDIDO": {
+        "count": 2923,
+        "timestamp": "2025-04-14T12:14:39.118537"
+    },
+    "ABATE_CONTRATO": {
+        "count": 0,
+        "timestamp": "2025-04-14T12:21:22.723840"
+    },
+    "ABATE_DOENCAS": {
+        "count": 0,
+        "timestamp": "2025-04-14T12:21:23.010508"
+    },
+    "ABATE_CURRAL": {
+        "count": 10,
+        "timestamp": "2025-04-14T12:21:42.324337"
+    },
+    "ABATE_ITENS_CONTRATO": {
+        "count": 0,
+        "timestamp": "2025-04-14T12:21:42.567824"
+    },
+    "ABATE_ITENS_ROMANEIO": {
+        "count": 0,
+        "timestamp": "2025-04-14T12:21:42.848059"
+    },
+    "ABATE_MOTIVO_PARADA": {
+        "count": 6,
+        "timestamp": "2025-04-14T12:22:19.693002"
+    },
+    "ABATE_MOTIVO_SEQUESTRO": {
+        "count": 47,
+        "timestamp": "2025-04-14T12:22:19.990313"
+    },
+    "ABATE_PESAGEM": {
+        "count": 2895,
+        "timestamp": "2025-04-14T12:22:20.278330"
+    },
+    "ABATE_PESAGEM_BEZERRO": {
+        "count": 4645,
+        "timestamp": "2025-04-14T12:22:20.569998"
+    },
+    "ABATE_PESAGEM_ITEM": {
+        "count": 186072,
+        "timestamp": "2025-04-14T12:22:21.318483"
+    },
+    "ABATE_PESAGEM_ITEM_MERCADO": {
+        "count": 0,
+        "timestamp": "2025-04-14T12:22:21.564517"
+    },
+    "ABATE_PESAGEM_ITEM_QUEBRA": {
+        "count": 0,
+        "timestamp": "2025-04-14T12:22:21.803239"
+    },
+    "ABATE_PESAGEM_PARADA": {
+        "count": 439,
+        "timestamp": "2025-04-14T12:22:22.076459"
+    },
+    "ABATE_PH": {
+        "count": 0,
+        "timestamp": "2025-04-14T12:22:22.359540"
+    },
+    "ABATE_PH_MERCADO": {
+        "count": 0,
+        "timestamp": "2025-04-14T12:22:22.640297"
+    },
+    "ABATE_PROGRAMACAO": {
+        "count": 662,
+        "timestamp": "2025-04-14T12:22:22.870872"
+    },
+    "ABATE_PROGRAMACAO_ITEM": {
+        "count": 2918,
+        "timestamp": "2025-04-14T12:22:23.139735"
+    },
+    "ABATE_PROGRAMACAO_ITEM_FOTO": {
+        "count": 0,
+        "timestamp": "2025-04-14T12:22:23.405010"
+    },
+    "ABATE_PROGRAMACAO_PEDIDO_ITEM": {
+        "count": 4878,
+        "timestamp": "2025-04-14T12:22:23.675490"
+    },
+    "ABATE_RECEBIMENTO_ANIMAL": {
+        "count": 0,
+        "timestamp": "2025-04-14T12:22:23.939200"
+    },
+    "ABATE_ROMANEIO": {
+        "count": 0,
+        "timestamp": "2025-04-14T12:22:24.206133"
+    },
+    "ABATE_SEQUENCIAL": {
+        "count": 0,
+        "timestamp": "2025-04-14T12:22:24.462234"
+    },
+    "ABATE_SEQUENCIAL_MERC_CALHA": {
+        "count": 0,
+        "timestamp": "2025-04-14T12:22:24.738486"
+    },
+    "ABATE_SEQUENCIAL_MERC_TIPI": {
+        "count": 0,
+        "timestamp": "2025-04-14T12:22:25.016283"
+    },
+    "ABATE_TEMP_DEMOSTR": {
+        "count": 0,
+        "timestamp": "2025-04-14T12:22:25.274210"
+    }
+}

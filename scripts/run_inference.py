@@ -11,7 +11,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # --- Configurações ---
 BASE_MODEL_ID = "meta-llama/Meta-Llama-3-8B-Instruct"
 # Use o caminho relativo ou absoluto para o seu adaptador treinado
-ADAPTER_PATH = "./results-llama3-8b-chat-adapter" 
+# ADAPTER_PATH = "./results-llama3-8b-chat-adapter" # Adaptador antigo
+ADAPTER_PATH = "./results-llama3-8b-chat-schema-adapter" # MODIFICADO: Usar adaptador de schema
 # Certifique-se que este caminho está correto!
 
 # Verificar disponibilidade de bfloat16 (melhor para Ampere GPUs ou mais recentes)
@@ -19,19 +20,21 @@ dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_suppo
 logging.info(f"Usando dtype: {dtype}")
 
 # --- Carregamento ---
-def load_model_and_tokenizer(base_model_id, adapter_path, device_map="auto"):
+def load_model_and_tokenizer(base_model_id, adapter_path):
     """Carrega o modelo base, o adaptador LoRA e o tokenizer."""
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    logging.info(f"Usando dispositivo: {device}")
     try:
         logging.info(f"Carregando tokenizer de {base_model_id}...")
         tokenizer = AutoTokenizer.from_pretrained(base_model_id)
         # Llama 3 Instruct usa pad_token = eos_token por padrão, o que é bom.
         # Se não tivesse, seria necessário: tokenizer.pad_token = tokenizer.eos_token
 
-        logging.info(f"Carregando modelo base {base_model_id}...")
+        logging.info(f"Carregando modelo base {base_model_id} em {device}...")
         model = AutoModelForCausalLM.from_pretrained(
             base_model_id,
             torch_dtype=dtype,
-            device_map=device_map, # Distribui o modelo automaticamente (CPU/GPU)
+            device_map=device # Usar o dispositivo explicitamente
         )
 
         logging.info(f"Carregando e aplicando adaptador LoRA de {adapter_path}...")
@@ -51,6 +54,7 @@ def load_model_and_tokenizer(base_model_id, adapter_path, device_map="auto"):
 # --- Geração de Texto ---
 def generate_response(model, tokenizer, prompt, max_new_tokens=150):
     """Formata o prompt, gera e decodifica a resposta do modelo."""
+    device = model.device # Pega o dispositivo do modelo carregado
     try:
         # Formatar o prompt usando o template de chat (essencial para Instruct models)
         # Nota: Usamos um formato simples aqui. Para conversas multi-turn, a estrutura seria mais complexa.
@@ -62,19 +66,21 @@ def generate_response(model, tokenizer, prompt, max_new_tokens=150):
 
         logging.debug(f"Prompt formatado: {formatted_prompt}")
 
-        # Tokenizar o prompt formatado
-        inputs = tokenizer(formatted_prompt, return_tensors="pt").to(model.device)
+        # Tokenizar o prompt formatado e mover explicitamente para a GPU
+        inputs = tokenizer(formatted_prompt, return_tensors="pt").to(device)
+        logging.info(f"Input tensors movidos para {inputs.input_ids.device}")
 
-        logging.info("Gerando resposta...")
+        logging.info("Gerando resposta na GPU...")
         # Gerar a resposta
         with torch.no_grad(): # Desabilita cálculo de gradientes para inferência
             outputs = model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
-                eos_token_id=tokenizer.eos_token_id, # Parar ao gerar o token de fim de sequência
-                do_sample=True, # Amostragem para respostas mais variadas
-                temperature=0.6, # Controla a aleatoriedade (mais baixo = mais determinístico)
-                top_p=0.9, # Nucleus sampling
+                eos_token_id=tokenizer.eos_token_id,
+                do_sample=True,
+                temperature=0.6,
+                top_p=0.9,
+                pad_token_id=tokenizer.eos_token_id # Adicionado para evitar aviso
             )
         
         # Decodificar a resposta gerada
