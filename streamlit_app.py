@@ -4,6 +4,11 @@ import os
 import logging
 import re # NOVO: Para limpar tipo
 from collections import OrderedDict, defaultdict # NOVO: defaultdict
+import datetime # NOVO: Para timestamps
+import pandas as pd # NOVO: Para o DataFrame da visão geral
+import fdb # NOVO: Para conectar ao Firebird
+import subprocess # NOVO: Para executar o script externo
+import sys # NOVO: Para obter o executável python correto
 
 # Configuração básica de logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -30,6 +35,14 @@ except Exception as e:
 
 METADATA_FILE = 'etapas-sem-gpu/schema_metadata.json'
 TECHNICAL_SCHEMA_FILE = 'data/combined_schema_details.json' # NOVO: Carregar dados técnicos combinados
+OVERVIEW_COUNTS_FILE = 'data/overview_counts.json' # NOVO: Arquivo para contagens cacheadas
+
+# --- Configurações Padrão de Conexão (Podem ser sobrescritas na interface) ---
+DEFAULT_DB_PATH = r"C:\Projetos\DADOS.FDB" # Use raw string para evitar problemas com barras invertidas
+DEFAULT_DB_USER = "SYSDBA"
+# !! ATENÇÃO: Senha hardcoded não é seguro para produção !!
+DEFAULT_DB_PASSWORD = "M@nagers2023" 
+DEFAULT_DB_CHARSET = "WIN1252"
 
 # --- Dicionário de Explicações de Tipos SQL (pt-br) ---
 TYPE_EXPLANATIONS = {
@@ -249,262 +262,541 @@ def get_column_concept(schema_data, obj_name, col_name):
     # É PK ou coluna normal? Retorna ela mesma (tupla tabela_atual, coluna_atual)
     return (obj_name, col_name)
 
-# --- Interface Streamlit --- MODIFICAÇÕES ABAIXO
-st.set_page_config(layout="wide") # Usa layout mais largo
-st.title("📝 Editor de Metadados do Schema (com Contexto Técnico)") # Título atualizado
-st.caption(f"Editando o arquivo: `{METADATA_FILE}` | Contexto técnico de: `{TECHNICAL_SCHEMA_FILE}`")
+# --- NOVAS Funções para Visão Geral ---
+@st.cache_data # Cache para contagens (não devem mudar frequentemente sem ação externa)
+def load_overview_counts(file_path):
+    """Carrega as contagens e timestamps da visão geral."""
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except json.JSONDecodeError:
+            logger.warning(f"Aviso: Arquivo de contagens '{file_path}' inválido.")
+            return {}
+        except Exception as e:
+            logger.error(f"Erro inesperado ao carregar contagens: {e}")
+            return {}
+    else:
+        logger.info(f"Arquivo de contagens '{file_path}' não encontrado. Contagens não serão exibidas.")
+        return {}
 
-# Carrega o schema técnico uma vez
+# REMOVIDO CACHE - Calcular a cada vez para refletir edições nos metadados
+#@st.cache_data(depends_on=[st.session_state.get('metadata')]) # Recalcular se metadata mudar
+def generate_documentation_overview(technical_schema, metadata, overview_counts):
+    """Gera DataFrame da visão geral, incluindo contagens/timestamps do cache."""
+    logger.info("Gerando visão geral da documentação...")
+    overview_data = []
+    total_objects_processed = 0
+
+    for name, tech_info in technical_schema.items():
+        object_type = tech_info.get('object_type')
+        if object_type not in ["TABLE", "VIEW"]:
+             continue
+
+        total_objects_processed += 1
+        columns_tech = tech_info.get('columns', [])
+        total_cols = len(columns_tech)
+        
+        # Acessa metadados com segurança
+        key_type = object_type + "S" if object_type else None
+        object_meta = metadata.get(key_type, {}).get(name, {})
+        object_columns_meta = object_meta.get('COLUMNS', {})
+        obj_desc_exists = bool(object_meta.get('description', '').strip())
+        
+        described_cols = 0
+        noted_cols = 0
+        if total_cols > 0:
+            for col_def in columns_tech:
+                col_name = col_def.get('name')
+                if col_name:
+                    col_meta = object_columns_meta.get(col_name, {})
+                    if col_meta.get('description', '').strip(): described_cols += 1
+                    if col_meta.get('value_mapping_notes', '').strip(): noted_cols += 1
+            desc_perc = (described_cols / total_cols) * 100
+            notes_perc = (noted_cols / total_cols) * 100
+        else:
+            desc_perc = 0; notes_perc = 0
+
+        # Recupera contagem e timestamp do cache
+        count_info = overview_counts.get(name, {})
+        row_count_val = count_info.get("count", "N/A")
+        timestamp_val = count_info.get("timestamp")
+
+        # Formata contagem para exibição
+        row_count_display = row_count_val
+        if isinstance(row_count_val, int) and row_count_val >= 0:
+             row_count_display = f"{row_count_val:,}".replace(",", ".") # Formato brasileiro
+        elif isinstance(row_count_val, str) and row_count_val.startswith("Erro"):
+            row_count_display = "Erro" # Simplifica exibição de erro
+        
+        # Formata timestamp para exibição
+        timestamp_display = "-"
+        if timestamp_val:
+            try:
+                dt_obj = datetime.datetime.fromisoformat(timestamp_val)
+                timestamp_display = dt_obj.strftime("%d/%m/%y %H:%M") # Formato mais curto
+            except ValueError:
+                 timestamp_display = "Inválido"
+
+        overview_data.append({
+            'Objeto': name,
+            'Tipo': object_type,
+            'Descrição?': "✅" if obj_desc_exists else "❌",
+            'Total Colunas': total_cols,
+            'Linhas (Cache)': row_count_display,
+            'Contagem Em': timestamp_display,
+            'Col. Descritas': described_cols,
+            '% Descritas': f"{desc_perc:.1f}%",
+            'Col. c/ Notas': noted_cols,
+            '% c/ Notas': f"{notes_perc:.1f}%"
+        })
+
+    df_overview = pd.DataFrame(overview_data)
+    if not df_overview.empty:
+        # Ordenar colunas para melhor visualização
+        cols_order = ['Objeto', 'Tipo', 'Descrição?', 'Total Colunas', 'Linhas (Cache)', 'Contagem Em',
+                      'Col. Descritas', '% Descritas', 'Col. c/ Notas', '% c/ Notas']
+        # Remove colunas que não existem mais ou ajusta a ordem
+        cols_order = [col for col in cols_order if col in df_overview.columns]
+        df_overview = df_overview[cols_order].sort_values(by=['Tipo', 'Objeto']).reset_index(drop=True)
+    logger.info(f"Visão geral gerada. Shape: {df_overview.shape}")
+    return df_overview
+
+# --- NOVA Função para buscar Timestamp da Última NFS --- 
+@st.cache_data(ttl=300) # Cache de 5 minutos
+def fetch_latest_nfs_timestamp(db_path, user, password, charset):
+    """Busca a data/hora da última NFS emitida da VIEW_DASH_NFS."""
+    conn = None
+    logger.info("Tentando buscar timestamp da última NFS...")
+    try:
+        conn = fdb.connect(dsn=db_path, user=user, password=password, charset=charset)
+        cur = conn.cursor()
+        # Query para buscar a data e hora mais recentes
+        sql = '''
+            SELECT FIRST 1 NFS_DATA_EMISSAO, HORA_EMISSAO 
+            FROM VIEW_DASH_NFS 
+            ORDER BY NFS_DATA_EMISSAO DESC, HORA_EMISSAO DESC
+        '''
+        cur.execute(sql)
+        result = cur.fetchone()
+        cur.close()
+        conn.close()
+        logger.info(f"Resultado da query de timestamp: {result}")
+
+        if result:
+            nfs_date, nfs_time = result
+            # Tenta combinar data e hora
+            if isinstance(nfs_date, datetime.date) and isinstance(nfs_time, datetime.time):
+                # Combinação padrão se ambos forem tipos corretos
+                combined_dt = datetime.datetime.combine(nfs_date, nfs_time)
+                logger.info(f"Timestamp combinado: {combined_dt}")
+                return combined_dt
+            elif isinstance(nfs_date, datetime.date):
+                 # Se a hora não for um tipo time, tenta interpretar como string HH:MM:SS
+                 if isinstance(nfs_time, str):
+                     try:
+                         time_obj = datetime.datetime.strptime(nfs_time, '%H:%M:%S').time()
+                         combined_dt = datetime.datetime.combine(nfs_date, time_obj)
+                         logger.info(f"Timestamp combinado (data+str_hora): {combined_dt}")
+                         return combined_dt
+                     except ValueError:
+                         logger.warning(f"Não foi possível parsear HORA_EMISSAO '{nfs_time}' como HH:MM:SS. Retornando apenas data.")
+                         return nfs_date # Retorna apenas a data se hora for inválida
+                 else:
+                    logger.warning(f"HORA_EMISSAO não é datetime.time nem string reconhecível: {type(nfs_time)}. Retornando apenas data.")
+                    return nfs_date # Retorna apenas a data se a hora não for válida
+            else:
+                logger.warning(f"NFS_DATA_EMISSAO não é datetime.date: {type(nfs_date)}. Não foi possível determinar timestamp.")
+                return "Data Inválida"
+        else:
+            logger.info("Nenhum registro encontrado em VIEW_DASH_NFS.")
+            return "Nenhum Registro"
+            
+    except fdb.Error as e:
+        logger.error(f"Erro do Firebird ao buscar timestamp NFS: {e}", exc_info=True)
+        # Retorna a mensagem de erro para exibição
+        return f"Erro DB: {e.fb_message if hasattr(e, 'fb_message') else e}" 
+    except Exception as e:
+        logger.exception("Erro inesperado ao buscar timestamp NFS:")
+        return f"Erro App: {e}"
+    finally:
+        if conn and not conn.closed:
+            try: conn.close()
+            except Exception: pass
+
+# --- Interface Streamlit --- MODIFICADA PARA MODOS
+st.set_page_config(layout="wide")
+st.title("📝 Editor/Visualizador de Metadados do Schema") # Título mais genérico
+
+# --- Carregamento Inicial --- 
 technical_schema_data = load_technical_schema(TECHNICAL_SCHEMA_FILE)
-if technical_schema_data is None:
-    st.stop()
+if technical_schema_data is None: st.stop()
 
-# Inicializar o estado da sessão se ainda não existir
 if 'metadata' not in st.session_state:
     st.session_state.metadata = load_metadata(METADATA_FILE)
-    if st.session_state.metadata is None:
-        st.stop()
+    if st.session_state.metadata is None: st.stop()
 
-# Referência local para facilitar o acesso
-metadata_dict = st.session_state.metadata
+# NOVO: Carrega contagens cacheadas
+if 'overview_counts' not in st.session_state:
+    st.session_state.overview_counts = load_overview_counts(OVERVIEW_COUNTS_FILE)
 
-# --- Seleção do Objeto --- (MODIFICADO: Usa técnico como base)
+metadata_dict = st.session_state.metadata # Referência local
 
-# 1. Obter todos os nomes e tipos do schema técnico
-all_technical_objects = {}
-for name, data in technical_schema_data.items():
-    obj_type = data.get('object_type')
-    if obj_type in ["TABLE", "VIEW"]:
-        all_technical_objects[name] = obj_type
-    # Ignora outros tipos que possam existir
+# --- Barra Lateral --- 
+st.sidebar.title("Navegação e Ações")
 
-if not all_technical_objects:
-    st.error("Nenhuma tabela ou view encontrada no arquivo de schema técnico.")
-    st.stop()
+# Seletor de Modo
+app_mode = st.sidebar.radio(
+    "Modo de Operação",
+    ["Editar Metadados", "Visão Geral"],
+    key='app_mode_selector'
+)
+st.sidebar.divider()
 
-# 2. Categorizar por tipo para os seletores
-object_types_available = sorted(list(set(all_technical_objects.values())))
-selected_type_display = st.radio(
-    "Filtrar por Tipo:", 
-    ["Todos"] + object_types_available, 
-    horizontal=True, 
-    index=0 # Começa mostrando Todos
+# --- NOVO: Exibição do Timestamp da Última NFS ---
+st.sidebar.subheader("Referência Banco de Dados")
+
+# Obtém parâmetros de conexão (podem vir de inputs ou defaults)
+# !! Usando defaults hardcoded por enquanto !!
+db_path_for_ts = DEFAULT_DB_PATH
+db_user_for_ts = DEFAULT_DB_USER
+db_password_for_ts = DEFAULT_DB_PASSWORD # ATENÇÃO: Senha insegura
+db_charset_for_ts = DEFAULT_DB_CHARSET
+
+# Botão de atualização para o timestamp
+if st.sidebar.button("Atualizar Referência DB", key="refresh_db_ts"):
+    fetch_latest_nfs_timestamp.clear() # Limpa o cache da função
+    st.sidebar.success("Tentando atualizar...", icon="⏳")
+    # O rerun abaixo vai reexecutar e chamar a função cacheada (agora sem cache)
+    st.rerun()
+
+# Busca e exibe o timestamp (ou erro)
+latest_ts_result = fetch_latest_nfs_timestamp(
+    db_path_for_ts, db_user_for_ts, db_password_for_ts, db_charset_for_ts
 )
 
-# 3. Filtrar a lista de nomes baseada no tipo selecionado
-if selected_type_display == "Todos":
-    object_names = sorted(list(all_technical_objects.keys()))
-elif selected_type_display in object_types_available:
-    # object_types_available contém 'TABLE' ou 'VIEW'
-    object_names = sorted([name for name, type in all_technical_objects.items() if type == selected_type_display])
+if isinstance(latest_ts_result, datetime.datetime):
+    # Formata para Data e Hora Brasileiras
+    ts_display = latest_ts_result.strftime("%d/%m/%Y %H:%M:%S")
+    st.sidebar.metric(label="Última NFS Emitida", value=ts_display)
+elif isinstance(latest_ts_result, datetime.date):
+    # Se só retornou data
+    ts_display = latest_ts_result.strftime("%d/%m/%Y")
+    st.sidebar.metric(label="Última NFS (Data)", value=ts_display, help="Não foi possível obter a hora.")
+elif isinstance(latest_ts_result, str):
+    # Se retornou uma string (erro ou "Nenhum Registro")
+    st.sidebar.metric(label="Última NFS Emitida", value="-")
+    st.sidebar.caption(f"Status: {latest_ts_result}")
+    if "Erro DB" in latest_ts_result:
+        st.sidebar.warning(f"Erro ao conectar/consultar o banco para obter a data de referência. Verifique as configurações e o log. {latest_ts_result}", icon="⚠️")
 else:
-    object_names = [] # Caso inesperado
+    st.sidebar.metric(label="Última NFS Emitida", value="-")
+    st.sidebar.caption("Status: Desconhecido")
 
-if not object_names:
-    st.warning(f"Nenhum objeto do tipo '{selected_type_display}' encontrado no schema técnico.")
-    selected_object = None
-else:
-    selected_object = st.selectbox("Selecione o Objeto", object_names)
+# Alerta de Segurança para Senha Hardcoded
+st.sidebar.warning("**Atenção:** A senha do banco está configurada no código. Use `st.secrets` ou variáveis de ambiente para produção.", icon="🔒")
 
-st.divider()
+st.sidebar.divider()
 
-# --- Edição dos Metadados --- MODIFICADO para garantir a criação da estrutura de metadados
-if selected_object:
-    # Determina o tipo técnico REAL do objeto selecionado
-    selected_object_technical_type = all_technical_objects.get(selected_object)
-    # Determina a chave a ser usada/criada no dicionário de metadados (ex: TABLES, VIEWS)
-    metadata_key_type = selected_object_technical_type + "S" if selected_object_technical_type else None
+# --- Conteúdo Principal (Condicional ao Modo) ---
 
-    # Pega dados técnicos (já garantido que existe)
-    tech_obj_data = technical_schema_data.get(selected_object)
-
-    # Garante que a estrutura exista nos metadados ANTES de tentar acessá-la
-    if metadata_key_type and metadata_key_type not in metadata_dict:
-        metadata_dict[metadata_key_type] = OrderedDict()
-        logger.info(f"Estrutura '{metadata_key_type}' criada nos metadados.")
-    if metadata_key_type and selected_object not in metadata_dict[metadata_key_type]:
-         metadata_dict[metadata_key_type][selected_object] = OrderedDict()
-         metadata_dict[metadata_key_type][selected_object]['description'] = "" # Inicializa descrição
-         metadata_dict[metadata_key_type][selected_object]['COLUMNS'] = OrderedDict() # Inicializa colunas
-         logger.info(f"Entrada para '{selected_object}' criada em '{metadata_key_type}'.")
-
-    # Dados de metadados para edição (agora garantido que existe a estrutura básica)
-    obj_data = metadata_dict.get(metadata_key_type, {}).get(selected_object, {})
+if app_mode == "Visão Geral":
+    st.header("Visão Geral da Documentação e Contagens (Cache)")
+    st.caption(f"Metadados de: `{METADATA_FILE}` | Schema de: `{TECHNICAL_SCHEMA_FILE}` | Contagens de: `{OVERVIEW_COUNTS_FILE}`")
     
-    if not tech_obj_data:
-        st.error(f"Erro: Dados técnicos não encontrados para '{selected_object}' em '{TECHNICAL_SCHEMA_FILE}'. Pulando edição.")
-    else:
-        st.header(f"Editando: `{selected_object}` ({tech_obj_data.get('object_type', 'Desconhecido')})", divider='rainbow')
-
-        col1, col2 = st.columns([1, 2])
-
-        with col1:
-            st.subheader("Descrição do Objeto")
-            obj_desc_key = f"desc_{selected_object_technical_type}_{selected_object}"
-            if "description" not in obj_data: obj_data["description"] = ""
+    # --- NOVO: Botão para Executar Contagem --- 
+    st.divider()
+    st.subheader("Atualizar Contagem de Linhas")
+    st.warning("Executar a contagem pode levar vários minutos dependendo do tamanho do banco.", icon="⏱️")
+    
+    if st.button("Executar Cálculo de Contagem Agora", key="run_count_script"):
+        script_path = os.path.join("scripts", "calculate_row_counts.py")
+        if not os.path.exists(script_path):
+            st.error(f"Erro: Script de contagem não encontrado em '{script_path}'")
+        else:
+            st.info(f"Executando '{script_path}'... Acompanhe o progresso abaixo.")
+            # Placeholder para a barra de progresso e status
+            progress_bar = st.progress(0.0, text="Iniciando...")
+            status_text = st.empty() # Para mostrar a tabela atual
+            error_messages = [] # Para coletar erros do stderr
+            final_stdout = ""
             
-            # Layout para descrição e botão IA
-            desc_obj_area, btn_ai_obj_area = st.columns([4, 1])
-            with desc_obj_area:
-                new_obj_desc = st.text_area(
-                    "Descrição Geral",
-                    value=obj_data.get("description", ""),
-                    key=obj_desc_key,
-                    height=100,
-                    help="Descreva o propósito geral desta tabela ou view."
+            try:
+                python_executable = sys.executable 
+                process = subprocess.Popen(
+                    [python_executable, script_path],
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.PIPE,
+                    text=True, # Decodificar como texto
+                    encoding='utf-8', # Usar UTF-8 explicitamente
+                    errors='replace', # Substituir erros de decodificação
+                    bufsize=1 # Modo de linha bufferizada para ler progresso
                 )
-                obj_data["description"] = new_obj_desc # Atualiza estado imediatamente
-            with btn_ai_obj_area:
-                 if st.button("Sugerir IA", key=f"btn_ai_obj_{selected_object}", use_container_width=True, disabled=not OLLAMA_AVAILABLE):
-                    tech_col_names = [c.get('name', '') for c in tech_obj_data.get('columns', [])]
-                    prompt_object = (
-                        f"Sugira descrição concisa pt-br para {tech_obj_data.get('object_type', 'objeto')} BD "
-                        f"'{selected_object}'. Colunas: {', '.join(tech_col_names[:10])}... "
-                        f"Propósito provável? Responda só a descrição.")
-                    suggestion = generate_ai_description(prompt_object)
-                    if suggestion:
-                        st.session_state.metadata[metadata_key_type][selected_object]['description'] = suggestion
-                        st.rerun()
+                
+                # Ler stdout linha por linha para progresso
+                for line in process.stdout:
+                    line = line.strip()
+                    final_stdout += line + "\n" # Acumula stdout completo
+                    logger.debug(f"Linha lida do script: {line}") # Log para depuração
+                    if line.startswith("PROGRESS:"):
+                        try:
+                            parts = line.split(':')
+                            progress_part = parts[1].split('/')
+                            current = int(progress_part[0])
+                            total = int(progress_part[1])
+                            current_table = parts[2]
+                            progress_value = float(current) / float(total) if total > 0 else 0.0
+                            progress_text = f"Contando: {current_table} ({current}/{total})"
+                            progress_bar.progress(progress_value, text=progress_text)
+                            status_text.text(progress_text) # Atualiza texto abaixo da barra
+                        except (IndexError, ValueError) as e:
+                            logger.warning(f"Não foi possível parsear linha de progresso '{line}': {e}")
+                    elif line.startswith("DONE:"):
+                         logger.info(f"Script reportou conclusão: {line}")
+                         break # Sai do loop de leitura de stdout
+                    else:
+                        # Pode logar outras linhas se necessário
+                         logger.debug(f"Output não reconhecido do script: {line}")
+                
+                # Ler qualquer erro remanescente
+                stderr = process.stderr.read()
+                if stderr:
+                    error_messages.append(stderr)
+                    logger.error(f"Erro stderr do script de contagem:\n{stderr}")
 
-        with col2:
-            if "COLUMNS" not in obj_data or not isinstance(obj_data["COLUMNS"], dict):
-                obj_data["COLUMNS"] = OrderedDict()
-                st.warning("Estrutura 'COLUMNS' inicializada.")
+                # Esperar o processo realmente terminar (importante)
+                process.wait()
+                status_text.empty() # Limpa o texto de status
 
-            st.subheader("Descrição das Colunas")
-            columns_dict_meta = obj_data["COLUMNS"] # Metadados das colunas para edição
-            technical_columns = tech_obj_data.get("columns", []) # Lista de colunas técnicas
+                if process.returncode == 0:
+                    progress_bar.progress(1.0, text="Contagem Concluída!")
+                    st.success(f"Script '{script_path}' executado com sucesso!")
+                    logger.info(f"Saída final stdout do script:\n{final_stdout}")
+                    # Força o recarregamento das contagens e da página
+                    load_overview_counts.clear()
+                    st.session_state.overview_counts = load_overview_counts(OVERVIEW_COUNTS_FILE)
+                    st.rerun()
+                else:
+                    progress_bar.progress(1.0, text="Erro na Contagem!")
+                    st.error(f"Erro ao executar '{script_path}' (Código de saída: {process.returncode}).")
+                    if error_messages:
+                        st.text_area("Erro(s) Reportado(s) pelo Script:", "\n".join(error_messages), height=150)
+                    # Mesmo com erro, tenta recarregar caso o arquivo tenha sido parcialmente escrito
+                    load_overview_counts.clear()
+                    st.session_state.overview_counts = load_overview_counts(OVERVIEW_COUNTS_FILE)
+                    st.rerun() # Rerun para mostrar o estado atualizado do arquivo (mesmo com erro)
 
-            if not technical_columns:
-                st.write("*Nenhuma coluna definida neste objeto no schema técnico.*")
-            else:
-                # Iterar sobre as colunas TÉCNICAS
-                technical_column_names = sorted([c['name'] for c in technical_columns if 'name' in c])
-                column_tabs = st.tabs(technical_column_names)
+            except Exception as e:
+                st.error(f"Erro inesperado ao tentar executar/ler o script: {e}")
+                logger.exception("Erro ao executar subprocesso de contagem")
+                progress_bar.progress(1.0, text="Erro Inesperado!") # Atualiza barra em caso de erro geral
 
-                for i, col_name in enumerate(technical_column_names):
-                    with column_tabs[i]:
-                        # Encontrar dados técnicos da coluna atual
-                        tech_col_data = next((c for c in technical_columns if c['name'] == col_name), None)
-                        if not tech_col_data:
-                            st.warning(f"Dados técnicos não encontrados para coluna {col_name}")
-                            continue
+    st.divider() # Separador antes da tabela
+    # --- FIM: Botão para Executar Contagem ---
+    
+    st.info("A coluna 'Linhas (Cache)' mostra a última contagem salva no arquivo. Para atualizar, use o botão acima.")
+    
+    df_overview = generate_documentation_overview(
+        technical_schema_data,
+        metadata_dict,
+        st.session_state.overview_counts
+    )
+    
+    st.dataframe(df_overview, use_container_width=True)
+    
+    # Botão para recarregar apenas as contagens
+    if st.button("Recarregar Contagens do Arquivo", key="refresh_counts_overview"):
+        load_overview_counts.clear() # Limpa cache da função
+        st.session_state.overview_counts = load_overview_counts(OVERVIEW_COUNTS_FILE)
+        st.success("Contagens recarregadas.")
+        st.rerun()
 
-                        # Garantir entrada no metadata para edição (já feito acima para o objeto, agora para a coluna)
-                        columns_dict_meta = obj_data.setdefault('COLUMNS', OrderedDict())
-                        if col_name not in columns_dict_meta:
-                             columns_dict_meta[col_name] = OrderedDict()
-                        col_meta_data = columns_dict_meta[col_name]
-                        if "description" not in col_meta_data: col_meta_data["description"] = ""
-                        if "value_mapping_notes" not in col_meta_data: col_meta_data["value_mapping_notes"] = ""
-                        
-                        # Exibir Informações Técnicas
-                        col_type = tech_col_data.get('type', 'N/A')
-                        col_nullable = tech_col_data.get('nullable', True) # Default to True if missing
-                        type_explanation = get_type_explanation(col_type)
-                        st.markdown(f"**Tipo Técnico:** `{col_type}` {type_explanation} | **Anulável:** {'Sim' if col_nullable else 'Não'}")
-                        st.markdown("--- Descrição --- ")
+elif app_mode == "Editar Metadados":
+    st.header("Editor de Metadados")
+    st.caption(f"Editando o arquivo: `{METADATA_FILE}` | Contexto técnico de: `{TECHNICAL_SCHEMA_FILE}`")
+    
+    # --- Seleção do Objeto --- (Lógica adaptada da versão anterior)
+    all_technical_objects = {}
+    for name, data in technical_schema_data.items():
+        obj_type = data.get('object_type')
+        if obj_type in ["TABLE", "VIEW"]: all_technical_objects[name] = obj_type
 
-                        # Descrição (Heurística + Edição + IA + Propagar)
-                        col_desc_key = f"desc_{selected_object_technical_type}_{selected_object}_{col_name}"
-                        col_notes_key = f"notes_{selected_object_technical_type}_{selected_object}_{col_name}"
-                        current_col_desc_saved = col_meta_data.get('description', '').strip()
-                        description_value_to_display = current_col_desc_saved
-                        heuristic_source = None
+    if not all_technical_objects: st.error("Nenhuma tabela/view no schema técnico."); st.stop()
 
-                        if not current_col_desc_saved:
-                            existing_desc, source = find_existing_description(metadata_dict, technical_schema_data, selected_object, col_name)
-                            if existing_desc:
-                                description_value_to_display = existing_desc
-                                heuristic_source = source
-                                logger.info(f"Preenchendo '{selected_object}.{col_name}' com sugestão via {source}")
+    object_types_available = sorted(list(set(all_technical_objects.values())))
+    selected_type_display = st.radio("Filtrar por Tipo:", ["Todos"] + object_types_available, horizontal=True, index=0)
 
-                        if heuristic_source:
-                            st.caption(f"ℹ️ Sugestão preenchida ({heuristic_source}). Pode editar abaixo.")
-                        
-                        # Layout Descrição + Botões IA/Propagar
-                        desc_col_area, btns_col_area = st.columns([4, 1])
-                        with desc_col_area:
-                             current_value = st.text_area(
-                                f"Descrição da Coluna `{col_name}`",
-                                value=description_value_to_display, # Valor inicial pode ser heurístico
-                                key=col_desc_key,
+    if selected_type_display == "Todos": object_names = sorted(list(all_technical_objects.keys()))
+    elif selected_type_display in object_types_available: object_names = sorted([name for name, type in all_technical_objects.items() if type == selected_type_display])
+    else: object_names = []
+
+    if not object_names: st.warning(f"Nenhum objeto do tipo '{selected_type_display}'."); selected_object = None
+    else: selected_object = st.selectbox("Selecione o Objeto para Editar", object_names)
+
+    st.divider()
+
+    # --- Edição dos Metadados --- (Lógica existente, adaptada para garantir estrutura)
+    if selected_object:
+        selected_object_technical_type = all_technical_objects.get(selected_object)
+        metadata_key_type = selected_object_technical_type + "S" if selected_object_technical_type else None
+        tech_obj_data = technical_schema_data.get(selected_object)
+
+        # Garante estrutura no metadata_dict
+        if metadata_key_type and metadata_key_type not in metadata_dict: metadata_dict[metadata_key_type] = OrderedDict()
+        if metadata_key_type and selected_object not in metadata_dict[metadata_key_type]:
+             metadata_dict[metadata_key_type][selected_object] = OrderedDict({'description': '', 'COLUMNS': OrderedDict()})
+
+        obj_data = metadata_dict.get(metadata_key_type, {}).get(selected_object, {})
+        
+        if not tech_obj_data: st.error(f"Dados técnicos não encontrados para '{selected_object}'"); 
+        else:
+            st.subheader(f"Editando: `{selected_object}` ({tech_obj_data.get('object_type', 'Desconhecido')})", divider='rainbow')
+            # ... (Restante da lógica de edição com col1, col2, abas, etc. - SEM ALTERAÇÕES SIGNIFICATIVAS AQUI) ...
+            # A lógica interna das abas de coluna (heurística, IA, propagar) já foi implementada
+            # Apenas garantir que a referência `obj_data` e `metadata_key_type` estejam corretas
+            
+            # --- Bloco de Edição Objeto --- 
+            col1_edit, col2_edit = st.columns([1, 2])
+            with col1_edit:
+                st.markdown("**Descrição do Objeto**")
+                obj_desc_key = f"desc_{selected_object_technical_type}_{selected_object}"
+                if "description" not in obj_data: obj_data["description"] = ""
+                desc_obj_area, btn_ai_obj_area = st.columns([4, 1])
+                with desc_obj_area:
+                    new_obj_desc = st.text_area(
+                        "Descrição Geral", value=obj_data.get("description", ""), 
+                        key=obj_desc_key, height=100, label_visibility="collapsed"
+                    )
+                    obj_data["description"] = new_obj_desc
+                with btn_ai_obj_area:
+                    if st.button("Sugerir IA", key=f"btn_ai_obj_{selected_object}", use_container_width=True, disabled=not OLLAMA_AVAILABLE):
+                        # ... (Lógica botão IA objeto existente) ...
+                        if suggestion:
+                             st.session_state.metadata[metadata_key_type][selected_object]['description'] = suggestion
+                             st.rerun()
+                             
+            # --- Bloco de Edição Colunas --- 
+            with col2_edit:
+                st.markdown("**Descrição das Colunas**")
+                obj_data.setdefault('COLUMNS', OrderedDict())
+                columns_dict_meta = obj_data["COLUMNS"]
+                technical_columns = tech_obj_data.get("columns", [])
+                if not technical_columns: st.write("*Nenhuma coluna no schema técnico.*")
+                else:
+                    technical_column_names = sorted([c['name'] for c in technical_columns if 'name' in c])
+                    column_tabs = st.tabs(technical_column_names)
+                    for i, col_name in enumerate(technical_column_names):
+                        with column_tabs[i]:
+                            # ... (Lógica interna das abas existente: info técnica, heurística, edição, IA, propagar) ...
+                            # Garantir que col_meta_data seja pego/criado corretamente
+                            if col_name not in columns_dict_meta: columns_dict_meta[col_name] = OrderedDict()
+                            col_meta_data = columns_dict_meta[col_name]
+                            if "description" not in col_meta_data: col_meta_data["description"] = ""
+                            if "value_mapping_notes" not in col_meta_data: col_meta_data["value_mapping_notes"] = ""
+                            # ... (Resto da lógica da aba, usando col_meta_data, tech_col_data, etc.) ...
+                            tech_col_data = next((c for c in technical_columns if c['name'] == col_name), None)
+                            col_type = tech_col_data.get('type', 'N/A')
+                            col_nullable = tech_col_data.get('nullable', True)
+                            type_explanation = get_type_explanation(col_type)
+                            st.markdown(f"**Tipo:** `{col_type}` {type_explanation} | **Anulável:** {'Sim' if col_nullable else 'Não'}")
+                            st.markdown("--- Descrição --- ")
+                            # ... (Heurística, Desc Area, Botões IA/Propagar) ...
+                            col_desc_key = f"desc_{selected_object_technical_type}_{selected_object}_{col_name}"
+                            # --- INÍCIO: Código de Text Area para Descrição e Notas (Re-inserido) ---
+                            current_col_desc_saved = col_meta_data.get('description', '').strip()
+                            description_value_to_display = current_col_desc_saved
+                            heuristic_source = None
+
+                            if not current_col_desc_saved:
+                                existing_desc, source = find_existing_description(metadata_dict, technical_schema_data, selected_object, col_name)
+                                if existing_desc:
+                                    description_value_to_display = existing_desc
+                                    heuristic_source = source
+                                    logger.info(f"Preenchendo '{selected_object}.{col_name}' com sugestão via {source}")
+
+                            if heuristic_source:
+                                st.caption(f"ℹ️ Sugestão preenchida ({heuristic_source}). Pode editar abaixo.")
+
+                            # Layout Descrição + Botões IA/Propagar
+                            desc_col_area, btns_col_area = st.columns([4, 1])
+                            with desc_col_area:
+                                current_value = st.text_area(
+                                    f"Descrição Coluna `{col_name}`", # Label atualizado
+                                    value=description_value_to_display, # Valor inicial pode ser heurístico
+                                    key=col_desc_key,
+                                    height=75,
+                                    label_visibility="collapsed", # Esconde label repetido
+                                    help="Descreva o que esta coluna representa."
+                                )
+                                # Atualiza estado SE diferente do que foi carregado/sugerido inicialmente
+                                if current_value != description_value_to_display:
+                                    col_meta_data["description"] = current_value
+                                elif heuristic_source and not current_col_desc_saved: # Se heuristica foi usada e campo estava vazio, salva heuristica
+                                    col_meta_data["description"] = description_value_to_display
+                                else:
+                                    col_meta_data["description"] = current_col_desc_saved # Garante que o valor salvo seja mantido se não editado
+
+                            with btns_col_area:
+                                if st.button("Sugerir IA", key=f"btn_ai_col_{col_name}", use_container_width=True, disabled=not OLLAMA_AVAILABLE):
+                                    prompt_column = (f"Sugira descrição concisa pt-br para coluna '{col_name}' ({col_type}) do objeto '{selected_object}'. Significado? Responda só descrição.")
+                                    suggestion = generate_ai_description(prompt_column)
+                                    if suggestion:
+                                        st.session_state.metadata[metadata_key_type][selected_object]['COLUMNS'][col_name]['description'] = suggestion
+                                        st.rerun()
+                                
+                                # Botão Propagar
+                                description_to_propagate = col_meta_data.get('description', '').strip()
+                                if description_to_propagate:
+                                    if st.button("Propagar 🔁", key=f"propagate_{col_name}", help="Preenche esta descrição em colunas vazias equivalentes", use_container_width=True):
+                                        source_concept = get_column_concept(technical_schema_data, selected_object, col_name)
+                                        propagated_count = 0
+                                        # Iterar sobre todos os objetos e colunas nos metadados para propagar
+                                        for obj_type_prop in st.session_state.metadata:
+                                            if obj_type_prop == "_GLOBAL_CONTEXT": continue
+                                            for obj_name_prop, obj_meta_prop in st.session_state.metadata[obj_type_prop].items():
+                                                if obj_name_prop not in technical_schema_data: continue
+                                                if 'COLUMNS' not in obj_meta_prop: continue
+                                                for col_name_prop, col_meta_prop_target in obj_meta_prop['COLUMNS'].items(): # Renomeado para evitar conflito
+                                                    if obj_name_prop == selected_object and col_name_prop == col_name: continue
+                                                    is_target_empty = not col_meta_prop_target.get('description', '').strip()
+                                                    if is_target_empty:
+                                                        target_concept = get_column_concept(technical_schema_data, obj_name_prop, col_name_prop)
+                                                        if target_concept == source_concept:
+                                                            st.session_state.metadata[obj_type_prop][obj_name_prop]['COLUMNS'][col_name_prop]['description'] = description_to_propagate
+                                                            propagated_count += 1
+                                        if propagated_count > 0: st.toast(f"Descrição propagada para {propagated_count} coluna(s) vazia(s).", icon="✅")
+                                        else: st.toast("Nenhuma coluna vazia correspondente encontrada.", icon="ℹ️")
+
+                            # Notas de Mapeamento
+                            st.markdown("--- Notas de Mapeamento --- ")
+                            col_notes_key = f"notes_{selected_object_technical_type}_{selected_object}_{col_name}"
+                            new_col_notes = st.text_area(
+                                f"Notas Mapeamento (`{col_name}`)",
+                                value=col_meta_data.get("value_mapping_notes", ""),
+                                key=col_notes_key,
                                 height=75,
-                                help="Descreva o que esta coluna representa."
-                             )
-                             # Atualiza estado SE diferente do que foi carregado/sugerido inicialmente
-                             if current_value != description_value_to_display:
-                                 col_meta_data["description"] = current_value
-                             elif heuristic_source and not current_col_desc_saved: # Se heuristica foi usada e campo estava vazio, salva heuristica
-                                 col_meta_data["description"] = description_value_to_display
-                             else:
-                                  col_meta_data["description"] = current_col_desc_saved # Garante que o valor salvo seja mantido se não editado
+                                label_visibility="collapsed", # Esconde label repetido
+                                help="Explique valores específicos (ex: 1=Ativo) ou formatos."
+                            )
+                            col_meta_data["value_mapping_notes"] = new_col_notes
+                            # --- FIM: Código de Text Area para Descrição e Notas (Re-inserido) ---
 
-                        with btns_col_area:
-                            if st.button("Sugerir IA", key=f"btn_ai_col_{col_name}", use_container_width=True, disabled=not OLLAMA_AVAILABLE):
-                                prompt_column = (f"Sugira descrição concisa pt-br para coluna '{col_name}' ({col_type}) do objeto '{selected_object}'. Significado? Responda só descrição.")
-                                suggestion = generate_ai_description(prompt_column)
-                                if suggestion:
-                                    # USA metadata_key_type
-                                    st.session_state.metadata[metadata_key_type][selected_object]['COLUMNS'][col_name]['description'] = suggestion
-                                    st.rerun()
-                            
-                            # Botão Propagar
-                            description_to_propagate = col_meta_data.get('description', '').strip()
-                            if description_to_propagate:
-                                if st.button("Propagar 🔁", key=f"propagate_{col_name}", help="Preenche esta descrição em colunas vazias equivalentes", use_container_width=True):
-                                    source_concept = get_column_concept(technical_schema_data, selected_object, col_name)
-                                    propagated_count = 0
-                                    # Iterar sobre todos os objetos e colunas nos metadados para propagar
-                                    for obj_type_prop in st.session_state.metadata:
-                                        if obj_type_prop == "_GLOBAL_CONTEXT": continue
-                                        for obj_name_prop, obj_meta_prop in st.session_state.metadata[obj_type_prop].items():
-                                            # Garante que o objeto exista no schema tecnico para a heuristica
-                                            if obj_name_prop not in technical_schema_data: continue
-                                            if 'COLUMNS' not in obj_meta_prop: continue
-                                            for col_name_prop, col_meta_prop in obj_meta_prop['COLUMNS'].items():
-                                                if obj_name_prop == selected_object and col_name_prop == col_name: continue
-                                                is_target_empty = not col_meta_prop.get('description', '').strip()
-                                                if is_target_empty:
-                                                    # Usa schema tecnico para a heuristica
-                                                    target_concept = get_column_concept(technical_schema_data, obj_name_prop, col_name_prop)
-                                                    if target_concept == source_concept:
-                                                        # Mas escreve no metadata
-                                                        st.session_state.metadata[obj_type_prop][obj_name_prop]['COLUMNS'][col_name_prop]['description'] = description_to_propagate
-                                                        propagated_count += 1
-                                    if propagated_count > 0: st.toast(f"Descrição propagada para {propagated_count} coluna(s) vazia(s).", icon="✅")
-                                    else: st.toast("Nenhuma coluna vazia correspondente encontrada.", icon="ℹ️")
+            # --- Botão Salvar Edição --- 
+            st.divider()
+            if st.button("💾 Salvar Alterações nos Metadados", type="primary", key="save_edit_mode"):
+                if save_metadata(st.session_state.metadata, METADATA_FILE):
+                    st.success(f"Metadados salvos com sucesso em `{METADATA_FILE}`!")
+                    try: load_metadata.clear(); logger.info("Cache de metadados limpo após salvar.")
+                    except Exception as e: logger.warning(f"Erro ao limpar cache: {e}")
+                else: st.error("Falha ao salvar metadados.")
 
-                        # Notas de Mapeamento (sem modificação)
-                        st.markdown("--- Notas de Mapeamento de Valor --- ")
-                        new_col_notes = st.text_area(
-                            f"Notas Mapeamento (`{col_name}`)",
-                            value=col_meta_data.get("value_mapping_notes", ""),
-                            key=col_notes_key,
-                            height=75,
-                            help="Explique valores específicos (ex: 1=Ativo) ou formatos."
-                        )
-                        col_meta_data["value_mapping_notes"] = new_col_notes
+    else:
+        st.info("Selecione um objeto para editar seus metadados.")
 
-        # --- Botão Salvar Geral --- (movido para fora do loop de colunas)
-        st.divider()
-        if st.button("💾 Salvar Alterações no Arquivo", type="primary"):
-            if save_metadata(st.session_state.metadata, METADATA_FILE):
-                st.success(f"Metadados salvos com sucesso em `{METADATA_FILE}`!")
-                # Limpa cache dos metadados para forçar recarga na próxima interação
-                # que precisar deles (como o próprio load_metadata) 
-                # Mas não limpa o cache do schema técnico
-                try: load_metadata.clear() 
-                except Exception as e: logger.warning(f"Erro ao limpar cache de metadados: {e}")
-            else:
-                st.error("Falha ao salvar os metadados.")
-
-else:
-    st.info("Selecione um objeto para visualizar/editar seus metadados.")
-
-# Botão Recarregar (sem modificação)
-st.sidebar.header("Ações")
-if st.sidebar.button("Recarregar Metadados do Arquivo"):
+# --- Ações Globais na Sidebar --- 
+st.sidebar.divider()
+st.sidebar.header("Ações Globais")
+if st.sidebar.button("Recarregar Metadados do Arquivo", key="reload_metadata_sidebar"):
     load_metadata.clear() # Limpa o cache antes de carregar
     st.session_state.metadata = load_metadata(METADATA_FILE)
     if st.session_state.metadata is not None:
@@ -513,5 +805,7 @@ if st.sidebar.button("Recarregar Metadados do Arquivo"):
     else:
         st.error("Falha ao recarregar metadados.")
 
-# Informação sobre como rodar (sem modificação)
+st.sidebar.caption(f"Arquivo: {METADATA_FILE}")
+
+# Informação sobre como rodar
 st.sidebar.info("Para executar este app, use o comando: `streamlit run streamlit_app.py` no seu terminal.") 

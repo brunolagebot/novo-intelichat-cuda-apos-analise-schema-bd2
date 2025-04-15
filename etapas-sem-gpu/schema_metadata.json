@@ -791,7 +791,7 @@
                     "value_mapping_notes": ""
                 },
                 "ASE_EMPRESA": {
-                    "description": "",
+                    "description": "Código que representa a empresa responsável pelos dados da linha em contexto.",
                     "value_mapping_notes": ""
                 },
                 "ASE_FILIAL": {
@@ -4111,6 +4111,23 @@
                     "value_mapping_notes": ""
                 }
             }
+        },
+        "ABATE_CURRAL": {
+            "description": "",
+            "COLUMNS": {
+                "ABC_CAPACIDADE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "ABC_DESCRICAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "ABC_NUMERO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                }
+            }
         }
     },
     "VIEWS": {
@@ -6682,6 +6699,347 @@
                 },
                 "DATA_REC": {
                     "description": "",
+                    "value_mapping_notes": ""
+                }
+            }
+        },
+        "VIEW_DASH_NFS": {
+            "description": "",
+            "COLUMNS": {
+                "ATIVIDADE_CLIENTE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "CFOP_SIMP": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "CFT_CODIGO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "CFT_DESCRICAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "CF_CPF_CGC": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "CF_FANTASIA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "CF_RAZAO": {
+                    "description": "Este é o nome do cliente, sua Razão Social, ou seja, o nome oficial da empresa que tem o cadastro em nossa empresa.",
+                    "value_mapping_notes": ""
+                },
+                "CF_TIPO_INSCR": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "CID_DESCRICAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "CID_UF": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "COORDENADOR": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "COORDENADOR_NOME": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "CUSTO_MEDIO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "DATA_SEMANA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "DIA_SEMANA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "EMPFILANOMES": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "EMP_NOME": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "FILIAL_CODIGO": {
+                    "description": "Código que representa a filial da empresa responsável pelos dados da linha em contexto. É um identificador único da unidade dentro da empresa.",
+                    "value_mapping_notes": ""
+                },
+                "FILIAL_FANTASIA": {
+                    "description": "Nome fantasia da filial, usado para identificação comercial em interações com clientes e documentos informais.",
+                    "value_mapping_notes": ""
+                },
+                "FILIAL_MARCA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GRUPO_CLIENTE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GRUPO_CLIENTE_DESCRICAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GRUPO_PRODUTO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "HORA_EMISSAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "MOTORISTA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NAT_DESCRICAO_ABR": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NFP_BASE_SUBST_TRIB": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NFP_BC_COFINS": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NFP_BC_ICMS": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NFP_BC_PIS": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NFP_NAT_OP": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NFP_PECAS": {
+                    "description": "One possible description in Portuguese for the column in the database called 'NFP_PECAS' of type 'DOUBLE PRECISION' that belongs to the object 'VIEW_DASH_VENDAS' (Table) is:\n\n- Não se pode ter um valor maior que o valor definido pelo tipo de dado. (The value cannot be greater than the defined value).\n- O valor do tipo de dado é fixo e não poderá ser modificado pelo usuário quando a função estiver carregando dados. (The value is fixed and cannot be changed by the user when the function is loading data.). \n\nThese descriptions suggest that 'NFP_PECAS' is a column in the 'VIEW_DASH_VENDAS' table that stores a double-precision value, which is a data type that allows for high precision and low-degree computations. The first description implies that the value should not exceed a certain range or limit, while the second description highlights that it is a fixed value that cannot be changed by the user when the function is loading data.",
+                    "value_mapping_notes": ""
+                },
+                "NFP_PRECO_UNITARIO": {
+                    "description": "Sure, here's a concise Portuguese description for the column in the database called 'NFP_PRECO_UNITARIO' of type 'DOUBLE PRECISION' that belongs to the object 'VIEW_DASH_VENDAS': \n\n\"A coluna de dados chamada 'NFP_PRECO_UNITARIO' que tem o tipo de dado dobradinha, ao longo da tabela de visualização 'VIEW_DASH_VENDAS'. A coluna representa uma variável dobramental de preço real.\" \n\nThis translates to: \"A column called 'NFP_PRECO_UNITARIO' with a type of double precision, belonging to the view 'VIEW_DASH_VENDAS', represents a real-valued variable.",
+                    "value_mapping_notes": ""
+                },
+                "NFP_PRODUTO": {
+                    "description": "A coluna de banco de dados chamada 'NFP_PRODUTO' do tipo 'INTEGER' que pertence ao objeto 'VIEW_DASH_VENDAS' (TABLE) significa que é uma coluna de dados numéricos armazenado em um banco de dados para além da tela. Ela pode ser usada para armazenar informações sobre produtos vendidos em um vendedor.",
+                    "value_mapping_notes": ""
+                },
+                "NFP_PRODUTO_DESCRICAO": {
+                    "description": "A coluna de banco de dados chamada 'NFP_PRODUTO_DESCRICAO' do tipo 'VARCHAR(231)' tem a propósito de armazenar um desenhado, uma descrição ou um valor alvo. A informação armazenada pode ser utilizada para identificar o produto e o seu valor. Em geral, esta coluna pode ser usada em uma tabela de vendas para agrupar os produtos envolvidos em várias vendas diferentes.",
+                    "value_mapping_notes": ""
+                },
+                "NFP_QTDE_PRODUTO": {
+                    "description": "The NFP_QTDE_PRODUTO column in the view Dash Vendas is a double-precision data type that belongs to the object View_Dash_Vendas. It possibly stores numerical values representing sales quantity and may also include other relevant information such as product name, price, and date of sale.",
+                    "value_mapping_notes": ""
+                },
+                "NFP_RATEIO_DESC_TOTAL": {
+                    "description": "A coluna de banco de dados chamada 'NFP_RATEIO_DESC_TOTAL' do tipo 'DOUBLE PRECISION' que pertence ao objeto 'VIEW_DASH_VENDAS' (TABLE) está sendo um conjunto de valores decimais que representam o valor total da atividade de venda no período específico no quão muito cada vendedor é bem-vindo.",
+                    "value_mapping_notes": ""
+                },
+                "NFP_RATEIO_FRETE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NFP_SIT_TRIBUTARIA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NFP_TOTAL_PRODUTO": {
+                    "description": "One possible description in Portuguese Brazil for the column \"NFP_TOTAL_PRODUTO\" in the \"VIEW_DASH_VENDAS\" table is \"Soma de produtos vendidos pelo total de venda.\" This means \"The sum of products sold by the total number of sales.\" It refers to the total amount of goods sold and indicates how many times each item has been purchased.",
+                    "value_mapping_notes": ""
+                },
+                "NFP_TOTAL_PRODUTO_BRUTO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NFP_UNIDADE_PRODUTO": {
+                    "description": "One possible description in Portuguese Brazilian for the column in the database table called 'NFP_UNIDADE_PRODUTO' of type 'VARCHAR(2)' that belongs to the object 'VIEW_DASH_VENDAS' (Table) is: \n\n'Série de Identificadores das Unidades Produtoras'. This translates to 'Series of Identifiers for Producer Units'.",
+                    "value_mapping_notes": ""
+                },
+                "NFP_VALOR_COFINS": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NFP_VALOR_ICMS": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NFP_VALOR_ICMS_SUBST_TRIB": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NFP_VALOR_PIS": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NFS_CLIENTE": {
+                    "description": "A coluna NFS_CLIENTE no banco de dados integrador pode ser uma referência para um cliente, especialmente em contexto financeiro eletrônico. Ele pode estar armazenado como um valor numérico integral, podendo variar de valores de 1 a 64, mas geralmente tem uma unidade de medida de 10. A referência dele pode ser importante para o funcionamento da tela de negócios em que ele está localizado.",
+                    "value_mapping_notes": ""
+                },
+                "NFS_DATA_CANCELAMENTO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NFS_DATA_EMISSAO": {
+                    "description": "One possible description in Portuguese Brazilian for the column \"NFS_DATA_EMISSAO\" of type \"TIMESTAMP\" in the table \"VIEW_DASH_VENDAS\" is \"Data da Emissão.\" This could refer to the date and time when a sale was initiated or created in the database.",
+                    "value_mapping_notes": ""
+                },
+                "NFS_EMPRESA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NFS_FRM_MTORISTA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NFS_LTCRR_DATA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NFS_LTCRR_LOTE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NFS_NRO_NF": {
+                    "description": "One possible description in Portuguese Brazil for the column 'NFS_NRO_NF' of type INTEGER that belongs to the object 'VIEW_DASH_VENDAS' (Table) is: \"A coluna que armazena valores numericos definidos pelo sistema e que pertence ao objeto 'VIEW_DASH_VENDAS' (Table).\" \n\nThis translates to \"a column that stores numeric values defined by the system and belongs to the object 'VIEW_DASH_VENDAS' (Table)\".",
+                    "value_mapping_notes": ""
+                },
+                "NFS_NUMERO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NFS_PEDIDO_NUMERO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NFS_SERIE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NFS_VALOR_TOTAL_NOTA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "NFS_VEICULO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "ORDEM_CARREGAMENTO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "PESO_BRUTO_ITEM": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "PESO_MEDIO_PRODUTO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "PPR_PRECO_ACAO_COMERCIAL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "PPR_PRECO_LISTA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "PPR_PRECO_LISTA_COD": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "PPR_TOTAL_PESO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "PRAZO_MEDIO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "PRODUTO_CLASS_FISCAL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "PRODUTO_COD_AUXILIAR": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "PRODUTO_COD_IMPORTACAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "PROPRIETARIO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "REDESPACHO_CODIGO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "REDESPACHO_NOME": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "SEG_CODIGO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "SEG_DESCRICAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "SUBGRUPO_PRODUTO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "TIPO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "TIPO_FRETE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "TIPO_NF": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "TL_DESCONTO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "TL_FRETE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VEICULO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VEND_CODIGO": {
+                    "description": "One possible description in Portuguese Brazilian for the column named 'VEND_CODIGO' of type 'INTEGER' that belongs to the object 'VIEW_DASH_CLIENTE' (VIEW) is:\n\n\"A coluna que armazena um número do tipo INTEGER e pertencia ao objeto VIEW_DASH_CLIENTE.\"\n\nThis translates to:\n\n\"A column that stores an integer type number and belonged to the object VIEW_DASH_CLIENTE.",
+                    "value_mapping_notes": ""
+                },
+                "VEND_NOME": {
+                    "description": "Certainly! Here is a concise Portuguese description for the column in the database called 'VEND_NOME' of type 'VARCHAR(50)' that belongs to the 'VIEW_DASH_VENDAS' table. It would likely mean something like \"a field for storing names, typically 50 characters long, associated with purchases made through the 'VIEW_DASH_VENDAS' table.",
                     "value_mapping_notes": ""
                 }
             }
