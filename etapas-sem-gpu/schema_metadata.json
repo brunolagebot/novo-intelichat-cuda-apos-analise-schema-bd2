@@ -429,12 +429,14 @@
                     "value_mapping_notes": ""
                 },
                 "VEND_CODIGO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "One possible description in Portuguese Brazilian for the column named 'VEND_CODIGO' of type 'INTEGER' that belongs to the object 'VIEW_DASH_CLIENTE' (VIEW) is:\n\n\"A coluna que armazena um número do tipo INTEGER e pertencia ao objeto VIEW_DASH_CLIENTE.\"\n\nThis translates to:\n\n\"A column that stores an integer type number and belonged to the object VIEW_DASH_CLIENTE.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `VIEW_DASH_CLIENTE`"
                 },
                 "VEND_NOME": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Certainly! Here is a concise Portuguese description for the column in the database called 'VEND_NOME' of type 'VARCHAR(50)' that belongs to the 'VIEW_DASH_VENDAS' table. It would likely mean something like \"a field for storing names, typically 50 characters long, associated with purchases made through the 'VIEW_DASH_VENDAS' table.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `VIEW_DASH_VENDAS`"
                 },
                 "VEND_AREA": {
                     "description": "",
@@ -497,8 +499,9 @@
                     "value_mapping_notes": ""
                 },
                 "CF_RAZAO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Este é o nome do cliente, sua Razão Social, ou seja, o nome oficial da empresa que tem o cadastro em nossa empresa.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CID_DESCRICAO": {
                     "description": "",
@@ -1470,20 +1473,23 @@
                     "value_mapping_notes": ""
                 },
                 "LC_CONTABIL_EMPRESA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código que representa a empresa responsável pelos dados da linha em contexto.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: chave estrangeira para `TABELA_PLANO.PLANO_EMPRESA`"
                 },
                 "LC_CONTABIL_FILIAL": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código que representa a filial da empresa responsável pelos dados da linha em contexto. É um identificador único da unidade dentro da empresa.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: chave estrangeira para `TABELA_PLANO.PLANO_FILIAL`"
                 },
                 "LC_CONTABIL_EXERCICIO": {
                     "description": "Coluna que indica o ano de exercício para fins contábeis.",
                     "value_mapping_notes": "Ano com 4 (quatro) dígitos."
                 },
                 "LC_CONTA_CONTABIL": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "É o código da conta contábil da empresa.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: chave estrangeira para `TABELA_PLANO.PLANO_CODIGO`"
                 },
                 "LC_CONTA_CONTABIL_REDUZIDO": {
                     "description": "",
@@ -1790,12 +1796,14 @@
                     "value_mapping_notes": ""
                 },
                 "LC_FAC_SACADOR_CIDADE_EMP": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código que representa a empresa responsável pelos dados da linha em contexto.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: chave estrangeira para `TABELA_CIDADE.CID_EMPRESA`"
                 },
                 "LC_FAC_SACADOR_CIDADE_FIL": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código que representa a filial da empresa responsável pelos dados da linha em contexto. É um identificador único da unidade dentro da empresa.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: chave estrangeira para `TABELA_CIDADE.CID_FILIAL`"
                 },
                 "LC_FAC_SACADOR_CIDADE": {
                     "description": "Código identificador da cidade cadastrada.",
@@ -1874,12 +1882,14 @@
                     "value_mapping_notes": ""
                 },
                 "LC_CARTAO_FOR_EMP": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código que representa a filial da empresa responsável pelos dados da linha em contexto. É um identificador único da unidade dentro da empresa.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: chave estrangeira para `TABELA_CLI_FOR.CF_EMPRESA`"
                 },
                 "LC_CARTAO_FOR_FIL": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "É o código da filial da empresa responsável pelos dados.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: chave estrangeira para `TABELA_CLI_FOR.CF_FILIAL`"
                 },
                 "LC_TIPO_CARTAO": {
                     "description": "",
@@ -4257,12 +4267,14 @@
                     "value_mapping_notes": "Relacionamento com plano de contas. Pode ser usada para validar lançamentos e classificações contábeis."
                 },
                 "PRODUTO_CC_EMPRESA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código que representa a empresa responsável pelos dados da linha em contexto.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: chave estrangeira para `TABELA_CC.CC_EMPRESA`"
                 },
                 "PRODUTO_CC_FILIAL": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código que representa a filial da empresa responsável pelos dados da linha em contexto. É um identificador único da unidade dentro da empresa.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: chave estrangeira para `TABELA_CC.CC_FILIAL`"
                 },
                 "PRODUTO_CENT_LOG_NRO_ESTOQUE": {
                     "description": "",
@@ -4285,12 +4297,14 @@
                     "value_mapping_notes": ""
                 },
                 "PRODUTO_CF_EMPRESA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código que representa a filial da empresa responsável pelos dados da linha em contexto. É um identificador único da unidade dentro da empresa.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: chave estrangeira para `TABELA_CLI_FOR.CF_EMPRESA`"
                 },
                 "PRODUTO_CF_FILIAL": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "É o código da filial da empresa responsável pelos dados.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: chave estrangeira para `TABELA_CLI_FOR.CF_FILIAL`"
                 },
                 "PRODUTO_CF_FORNECEDOR": {
                     "description": "Código do cliente cadastrado. Por cliente, pode ser cliente ou fornecedor, o campo de cadastro é o mesmo.",
@@ -6143,12 +6157,14 @@
                     "value_mapping_notes": ""
                 },
                 "CF_CIDADE_EMPRESA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código que representa a empresa responsável pelos dados da linha em contexto.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: chave estrangeira para `TABELA_CIDADE.CID_EMPRESA`"
                 },
                 "CF_CIDADE_FILIAL": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código que representa a filial da empresa responsável pelos dados da linha em contexto. É um identificador único da unidade dentro da empresa.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: chave estrangeira para `TABELA_CIDADE.CID_FILIAL`"
                 },
                 "CF_CIDADE": {
                     "description": "Código identificador da cidade cadastrada.",
@@ -8592,12 +8608,14 @@
                     "value_mapping_notes": "Cada cidade tem um cadastro único."
                 },
                 "FUN_CIDADE_EMPRESA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código que representa a empresa responsável pelos dados da linha em contexto.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: chave estrangeira para `TABELA_CIDADE.CID_EMPRESA`"
                 },
                 "FUN_CIDADE_FILIAL": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código que representa a filial da empresa responsável pelos dados da linha em contexto. É um identificador único da unidade dentro da empresa.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: chave estrangeira para `TABELA_CIDADE.CID_FILIAL`"
                 },
                 "FUN_CIDADE": {
                     "description": "Código identificador da cidade cadastrada.",
@@ -11060,8 +11078,9 @@
                     "value_mapping_notes": ""
                 },
                 "CF_RAZAO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Este é o nome do cliente, sua Razão Social, ou seja, o nome oficial da empresa que tem o cadastro em nossa empresa.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `VIEW_VENDEDOR`"
                 },
                 "CF_SIGLA": {
                     "description": "",
@@ -11072,8 +11091,9 @@
                     "value_mapping_notes": ""
                 },
                 "CIDADE": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "One possible description in Portuguese for the column in the database called \"CIDADE\" of type \"VARCHAR(50)\", which belongs to the object \"VIEW_DASH_VENDAS\", is:\n\n- CIDADE: Informação de área geográfica para localizar o banco de dados.\n\nThis description suggests that the \"CIDADE\" column contains information about the geographical area where the database is located, which can be used to identify it.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `VIEW_DASH_VENDAS`"
                 },
                 "CID_DESCRICAO": {
                     "description": "",
@@ -11241,32 +11261,38 @@
             "description": "A VIEW_PRODUTOS em português brasileiro é uma tela de dados que permite visualizar informações relacionadas às vendas, como o produto, a empresa onde foi fabricado, a filiação do produto, o tipo de produto, o código de produto, o grupo da empresa responsável pela fabricação, o desenho geral de vendas e até mesmo sub-grupos de produtos. Ao contrário de outras tabelas de dados, os dados são exibidos em ordem de grandeza e não dependendo do ordenamento da tabela original. A intenção geral do negócio é apreço-la como um tool para visualizar informações relacionadas às vendas.\n\nOs dados estão organizados de tal maneira que se pode facilitar uma comparação bem-sucedida de diferentes produtos, empresas e grupos. É acessível para fazer tarefas como analise, preenchimento de formulários ou pesquisa de negócio.",
             "COLUMNS": {
                 "PRODUTO_EMPRESA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código que representa a empresa responsável pelos dados da linha em contexto.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_PRODUTO`"
                 },
                 "PRODUTO_FILIAL": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código que representa a filial da empresa responsável pelos dados da linha em contexto. É um identificador único da unidade dentro da empresa.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_PRODUTO`"
                 },
                 "PRODUTO_TIPO": {
                     "description": "",
                     "value_mapping_notes": ""
                 },
                 "PRODUTO_CODIGO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Coluna que indica o código identificador único dos produtos. O código é único, tanto para mercadorias vendidas quanto para itens que são adquiridos pela empresa. Cortes com osso, cortes da desossa, carne, equipamentos de proteção individual, insumos, embalagens, quase tudo é produto e está representado por um código.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_PRODUTO`"
                 },
                 "PRODUTO_GRUPO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Certainly! Here's a concise Portuguese description for the \"PRODUTO_GRUPO\" column in the \"VIEW_DASH_VENDAS\" table that belongs to the \"INTEGER\" type: \n\n\"Produto Grupo\" é um campo de dados numérico da tabela \"VIEW_DASH_VENDAS\". Ele está armazenado como um valor integral no formato N, onde N é o número de produtos envolvidos na vendas desejadas. Assim, ele está relacionado às vendas e ainda mais, ele pode ser usado para gerenciar as vendas em um grande número de produtos em um único local de negócio.\n\nÉ importante notar que este campo de dados armazenado não se refere a um grupo de produtos específicos, como empresas ou marcas, mas sim a um conjunto numérico de produtos valorizados por um determinado período de tempo e no contexto específico da tabela.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `VIEW_DASH_VENDAS`"
                 },
                 "GRUPO_DESCRICAO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "One possible description in Portuguese Brazil for the column in the database table called 'GRUPO_DESCRICAO' of type 'VARCHAR(50)' that belongs to the object 'VIEW_DASH_VENDAS' (Table) is:\n\n- 'GRUPO_DESCRICAO' - a descriptive field that holds a string with 50 characters.\n\nThis description is just an example and may vary depending on the specific requirements of the system or application using the database.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `VIEW_DASH_VENDAS`"
                 },
                 "PRODUTO_SUBGRUPO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "A coluna de banco de dados chamada 'PRODUTO_SUBGRUPO' do tipo 'INTEGER' que pertence ao objeto 'VIEW_DASH_VENDAS' (TABLE) é uma coluna que possui o valor de um número integer. Ela pode ser usada para identificar quais produtos sub-grupos de vendas estão sendo analisados em um determinado momento da história do banco de dados.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `VIEW_DASH_VENDAS`"
                 },
                 "GRUPO_CONTABIL_EMPRESA": {
                     "description": "",
@@ -11289,8 +11315,9 @@
                     "value_mapping_notes": ""
                 },
                 "SUBGRUPO_DESCRICAO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "One possible description in Portuguese Brazil for the column in the database called 'SUBGRUPO_DESCRICAO' of type 'VARCHAR(50)' that belongs to the object 'VIEW_DASH_VENDAS' (Table) is: \n\n'Sobre o significado específico de dados armazenados.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `VIEW_DASH_VENDAS`"
                 },
                 "PRODUTO_ATIVO": {
                     "description": "",
@@ -11474,16 +11501,19 @@
                     "value_mapping_notes": ""
                 },
                 "CF_RAZAO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Este é o nome do cliente, sua Razão Social, ou seja, o nome oficial da empresa que tem o cadastro em nossa empresa.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `VIEW_VENDEDOR`"
                 },
                 "CF_CIDADE": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código identificador da cidade cadastrada.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CF_ICMS": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Coluna que guarda o código que referencia o regime de ICMS do cliente/ fornecedor em contexto.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "PED_CIDADE_COBRANCA": {
                     "description": "",
@@ -11579,12 +11609,14 @@
                     "value_mapping_notes": ""
                 },
                 "CF_FANTASIA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Coluna que armazena o nome fantasia do cliente/ fornecedor. Nome fantasia é o nome, pelo qual a empresa popularmente é conhecida ou chamada. Pode ser um apelido, marca, entre outros. Não precisa ter relação com a razão social.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CF_ICMS": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Coluna que guarda o código que referencia o regime de ICMS do cliente/ fornecedor em contexto.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CF_CPF_CGC": {
                     "description": "",
@@ -11603,16 +11635,19 @@
                     "value_mapping_notes": ""
                 },
                 "CF_CIDADE_EMPRESA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código que representa a empresa responsável pelos dados da linha em contexto.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CF_CIDADE_FILIAL": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código que representa a filial da empresa responsável pelos dados da linha em contexto. É um identificador único da unidade dentro da empresa.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CF_CIDADE": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código identificador da cidade cadastrada.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CID_DESCRICAO": {
                     "description": "",
@@ -11651,8 +11686,9 @@
                     "value_mapping_notes": ""
                 },
                 "CF_BANCO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código que representa o local de cobrança",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CF_AGENCIA": {
                     "description": "",
@@ -11715,20 +11751,24 @@
                     "value_mapping_notes": ""
                 },
                 "CF_REFERENCIA_EMPRESA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "É o código da nossa empresa.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CF_REFERENCIA_FILIAL": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "É o código da filial da empresa responsável pelos dados.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CF_REFERENCIA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código do cliente cadastrado. Por cliente, pode ser cliente ou fornecedor, o campo de cadastro é o mesmo.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CF_CIDADE2": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código identificador da cidade cadastrada.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CF_CEP2": {
                     "description": "",
@@ -11739,16 +11779,19 @@
                     "value_mapping_notes": ""
                 },
                 "CF_LC_EMPRESA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código que representa a empresa responsável pelos dados da linha em contexto.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CF_LC_FILIAL": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código que representa a filial da empresa responsável pelos dados da linha em contexto.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CF_LOCAL_COBRANCA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código que representa o local de cobrança",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CF_TC_EMPRESA": {
                     "description": "",
@@ -11775,8 +11818,9 @@
                     "value_mapping_notes": ""
                 },
                 "CF_CIDADE3": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código identificador da cidade cadastrada.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CF_CEP3": {
                     "description": "",
@@ -11823,8 +11867,9 @@
                     "value_mapping_notes": ""
                 },
                 "CF_CIDADE4": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código identificador da cidade cadastrada.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CF_CEP4": {
                     "description": "",
@@ -13313,8 +13358,9 @@
                     "value_mapping_notes": ""
                 },
                 "FILIAL_RAZAO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Razão social completa da filial, usada em documentos fiscais e registros oficiais.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_FILIAL`"
                 },
                 "LC_CODIGO": {
                     "description": "Código que representa o local de cobrança",
@@ -13389,8 +13435,9 @@
                     "value_mapping_notes": ""
                 },
                 "LC_CONTA_CONTABIL": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "É o código da conta contábil da empresa.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_LOCAL_COBRANCA`"
                 },
                 "PLANO_DESCRICAO": {
                     "description": "",
@@ -13414,8 +13461,9 @@
                     "value_mapping_notes": ""
                 },
                 "PED_EMPRESA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "\n- PED_EMPRESA é um inteiro que representa o número de empresas registradas no banco de dados.\n- Ele pode variar de acordo com a natureza do sistema e ser usado para identificar novos ou antigos contribuintes.\n- São chamados de \"PEDIDO\" (VIEW) e representam acesso às operações de criação, modificação e consulta de dados.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `VIEW_PEDIDO`"
                 },
                 "PED_FILIAL": {
                     "description": "",
@@ -13438,12 +13486,14 @@
                     "value_mapping_notes": ""
                 },
                 "CF_CODIGO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código do cliente cadastrado. Por cliente, pode ser cliente ou fornecedor, o campo de cadastro é o mesmo.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CF_RAZAO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Este é o nome do cliente, sua Razão Social, ou seja, o nome oficial da empresa que tem o cadastro em nossa empresa.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `VIEW_VENDEDOR`"
                 },
                 "CF_SIF": {
                     "description": "",
@@ -13486,8 +13536,9 @@
                     "value_mapping_notes": ""
                 },
                 "PRODUTO_CODIGO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Coluna que indica o código identificador único dos produtos. O código é único, tanto para mercadorias vendidas quanto para itens que são adquiridos pela empresa. Cortes com osso, cortes da desossa, carne, equipamentos de proteção individual, insumos, embalagens, quase tudo é produto e está representado por um código.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_PRODUTO`"
                 },
                 "PERIODO": {
                     "description": "",
@@ -13555,8 +13606,9 @@
                     "value_mapping_notes": ""
                 },
                 "CF_FANTASIA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Coluna que armazena o nome fantasia do cliente/ fornecedor. Nome fantasia é o nome, pelo qual a empresa popularmente é conhecida ou chamada. Pode ser um apelido, marca, entre outros. Não precisa ter relação com a razão social.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CF_RAZAO": {
                     "description": "Este é o nome do cliente, sua Razão Social, ou seja, o nome oficial da empresa que tem o cadastro em nossa empresa.",
@@ -13731,8 +13783,9 @@
                     "value_mapping_notes": ""
                 },
                 "NFS_EMPRESA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código que representa a empresa responsável pelos dados da linha em contexto.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_NF_SAIDA`"
                 },
                 "NFS_FRM_MTORISTA": {
                     "description": "",

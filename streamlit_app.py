@@ -169,8 +169,34 @@ def find_existing_description(metadata, schema_data, current_object_name, target
     if not metadata or not schema_data or not target_col_name or not current_object_name:
         return None, None # Retorna None para descrição e para a fonte
 
-    # 1. Busca por nome exato (prioridade)
-    for obj_type_key in ['TABLES', 'VIEWS', 'DESCONHECIDOS']:
+    # --- NOVO: 1. Verificar Comentário do Banco de Dados --- 
+    current_object_info = schema_data.get(current_object_name)
+    if current_object_info:
+        # Encontra a info técnica da coluna alvo
+        tech_col_info = None
+        for col_def in current_object_info.get('columns', []):
+            if col_def.get('name') == target_col_name:
+                tech_col_info = col_def
+                break
+        # Verifica se a descrição técnica (comentário DB) existe
+        if tech_col_info:
+            db_comment_raw = tech_col_info.get('description') # Pode retornar None
+            if db_comment_raw: # Checa se não é None ou string vazia
+                db_comment = db_comment_raw.strip()
+                if db_comment: # Checa se não ficou vazio após strip
+                    # Pega o tipo de objeto para acessar metadados corretamente
+                    obj_type = current_object_info.get('object_type', 'TABLE') # Default para TABLE se não achar
+                    obj_type_key = obj_type + "S"
+                    # Checa se a descrição manual JÁ está preenchida - SÓ USA COMENTÁRIO SE MANUAL VAZIA
+                    manual_desc = metadata.get(obj_type_key, {}).get(current_object_name, {}).get('COLUMNS', {}).get(target_col_name, {}).get('description','').strip()
+                    if not manual_desc: # Somente se a descrição manual estiver vazia
+                        logger.debug(f"Heurística: Descrição encontrada via comentário do DB para {current_object_name}.{target_col_name}")
+                        return db_comment, "database comment"
+                    # else: Se manual_desc existe, ignora o comentário do DB e segue para outras heurísticas
+    # --- FIM NOVO --- 
+
+    # 2. Busca por nome exato (prioridade se comentário DB falhar)
+    for obj_type_key in ['TABLES', 'VIEWS']:
         for obj_name, obj_meta in metadata.get(obj_type_key, {}).items():
             if obj_name == current_object_name: continue
             col_meta = obj_meta.get('COLUMNS', {}).get(target_col_name)
@@ -189,7 +215,7 @@ def find_existing_description(metadata, schema_data, current_object_name, target
     current_constraints = current_object_info.get('constraints', {})
     current_pk_cols = [col for pk in current_constraints.get('primary_key', []) for col in pk.get('columns', [])]
 
-    # 2. Busca Direta (Se target_col é FK)
+    # 3. Busca Direta (Se target_col é FK)
     for fk in current_constraints.get('foreign_keys', []):
         fk_columns = fk.get('columns', [])
         ref_table = fk.get('references_table')
@@ -214,28 +240,31 @@ def find_existing_description(metadata, schema_data, current_object_name, target
                     return desc, source
             except (IndexError, ValueError): continue
 
-    # 3. Busca Inversa (Se target_col é PK)
-    if target_col_name in current_pk_cols:
-        for other_obj_name, other_obj_info in schema_data.items():
-            if other_obj_name == current_object_name: continue
-            other_constraints = other_obj_info.get('constraints', {})
-            for other_fk in other_constraints.get('foreign_keys', []):
-                 if other_fk.get('references_table') == current_object_name and \
-                    target_col_name in other_fk.get('references_columns', []):
-                     referencing_columns = other_fk.get('columns', [])
-                     ref_pk_columns = other_fk.get('references_columns', [])
-                     try:
-                         idx_pk = ref_pk_columns.index(target_col_name)
-                         referencing_col_name = referencing_columns[idx_pk]
-                         other_obj_type = other_obj_info.get('object_type', 'TABLE')
-                         other_obj_type_key = other_obj_type + "S"
-                         other_col_meta = metadata.get(other_obj_type_key, {}).get(other_obj_name, {}).get('COLUMNS', {}).get(referencing_col_name)
-                         if other_col_meta and other_col_meta.get('description', '').strip():
-                             desc = other_col_meta['description']
-                             source = f"coluna `{referencing_col_name}` em `{other_obj_name}` (ref. esta PK)"
-                             logger.debug(f"Heurística: Descrição encontrada por {source} para {current_object_name}.{target_col_name}")
-                             return desc, source
-                     except (IndexError, ValueError): continue
+    # 4. Busca Inversa (Se target_col é PK)
+    if current_object_info: # Reutiliza a variável carregada
+        current_constraints = current_object_info.get('constraints', {})
+        current_pk_cols = [col for pk in current_constraints.get('primary_key', []) for col in pk.get('columns', [])]
+        if target_col_name in current_pk_cols:
+            for other_obj_name, other_obj_info in schema_data.items():
+                if other_obj_name == current_object_name: continue
+                other_constraints = other_obj_info.get('constraints', {})
+                for other_fk in other_constraints.get('foreign_keys', []):
+                     if other_fk.get('references_table') == current_object_name and \
+                        target_col_name in other_fk.get('references_columns', []):
+                         referencing_columns = other_fk.get('columns', [])
+                         ref_pk_columns = other_fk.get('references_columns', [])
+                         try:
+                             idx_pk = ref_pk_columns.index(target_col_name)
+                             referencing_col_name = referencing_columns[idx_pk]
+                             other_obj_type = other_obj_info.get('object_type', 'TABLE')
+                             other_obj_type_key = other_obj_type + "S"
+                             other_col_meta = metadata.get(other_obj_type_key, {}).get(other_obj_name, {}).get('COLUMNS', {}).get(referencing_col_name)
+                             if other_col_meta and other_col_meta.get('description', '').strip():
+                                 desc = other_col_meta['description']
+                                 source = f"coluna `{referencing_col_name}` em `{other_obj_name}` (ref. esta PK)"
+                                 logger.debug(f"Heurística: Descrição encontrada por {source} para {current_object_name}.{target_col_name}")
+                                 return desc, source
+                         except (IndexError, ValueError): continue
 
     return None, None # Nenhuma descrição encontrada
 
@@ -482,6 +511,54 @@ def fetch_sample_data(db_path, user, password, charset, table_name, num_rows=10)
         if conn and not conn.closed:
             try: conn.close()
             except Exception: pass
+# --- FIM NOVA Função ---
+
+# --- NOVA Função para Heurística Global ---
+def apply_heuristics_globally(metadata_dict, technical_schema):
+    """Aplica a heurística find_existing_description a todas as colunas vazias."""
+    logger.info("Iniciando aplicação global da heurística...")
+    updated_count = 0
+    already_filled_count = 0
+    not_found_count = 0
+
+    objects_to_process = {}
+    for obj_type_key in ['TABLES', 'VIEWS']:
+         if obj_type_key in metadata_dict:
+              objects_to_process.update(metadata_dict[obj_type_key])
+
+    total_objects = len(objects_to_process)
+    processed_objects = 0
+    # Placeholder para possível barra de progresso se necessário
+    # progress_bar = st.progress(0.0, text="Iniciando heurística...") 
+
+    for obj_name, obj_meta in objects_to_process.items():
+        processed_objects += 1
+        # progress = processed_objects / total_objects
+        # progress_bar.progress(progress, text=f"Processando {obj_name} ({processed_objects}/{total_objects})")
+
+        if 'COLUMNS' not in obj_meta:
+            continue
+
+        columns_meta = obj_meta['COLUMNS']
+        for col_name, col_meta_target in columns_meta.items(): # Renomeado para clareza
+            current_desc = col_meta_target.get('description', '').strip()
+            # Só aplica se a descrição atual estiver VAZIA
+            if not current_desc:
+                # Procura descrição existente
+                existing_desc, source = find_existing_description(metadata_dict, technical_schema, obj_name, col_name)
+                if existing_desc:
+                    logger.debug(f"Heurística global: Atualizando '{obj_name}.{col_name}' com base em '{source}'")
+                    col_meta_target['description'] = existing_desc
+                    col_meta_target['source_description'] = f"heuristic: {source}" # Adiciona marcador
+                    updated_count += 1
+                else:
+                    not_found_count += 1
+            else:
+                 already_filled_count += 1
+
+    logger.info(f"Aplicação global da heurística concluída. Atualizadas: {updated_count}, Preenchidas: {already_filled_count}, Não encontradas: {not_found_count}")
+    # progress_bar.progress(1.0, text="Heurística Concluída!")
+    return updated_count, already_filled_count, not_found_count
 # --- FIM NOVA Função ---
 
 # --- Interface Streamlit --- MODIFICADA PARA MODOS
@@ -1148,6 +1225,16 @@ st.sidebar.caption(f"Arquivo: {METADATA_FILE}")
 # --- NOVO: Botão para Executar Merge ---
 st.sidebar.divider()
 st.sidebar.subheader("Processamento de Dados")
+
+# --- Botão para Heurística Global ---
+if st.sidebar.button("Aplicar Heurística Globalmente", key="apply_heuristics_button", help="Tenta preencher descrições de colunas vazias usando nomes/relações existentes."):
+    with st.spinner("Aplicando heurística em todas as colunas vazias..."):
+        updated, already_filled, not_found = apply_heuristics_globally(st.session_state.metadata, technical_schema_data)
+        st.sidebar.success(f"Heurística Concluída!", icon="✅")
+        st.sidebar.info(f"- {updated} descrições preenchidas.\n- {already_filled} já tinham descrição.\n- {not_found} sem sugestão encontrada.")
+        st.sidebar.warning("As alterações estão em memória. Salve os metadados para persistir.")
+# --- FIM Botão Heurística ---
+
 if st.sidebar.button("Executar Merge de Dados", key="run_merge_script"):
     script_path = os.path.join("scripts", "merge_schema_data.py")
     if not os.path.exists(script_path):
