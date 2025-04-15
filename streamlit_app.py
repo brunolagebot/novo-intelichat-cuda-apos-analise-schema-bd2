@@ -504,6 +504,9 @@ if 'latest_db_timestamp' not in st.session_state:
     st.session_state.latest_db_timestamp = None # Inicializa como None
 
 metadata_dict = st.session_state.metadata # Referência local
+# NOVO: Inicializar estado para Ollama
+if 'ollama_enabled' not in st.session_state:
+    st.session_state.ollama_enabled = True
 
 # --- Barra Lateral --- 
 st.sidebar.title("Navegação e Ações")
@@ -581,6 +584,15 @@ else:
     st.sidebar.caption("Status: Desconhecido")
 
 st.sidebar.divider()
+
+# --- NOVO: Toggle para Habilitar/Desabilitar Ollama ---
+st.sidebar.divider()
+st.sidebar.subheader("Configurações")
+if OLLAMA_AVAILABLE:
+    st.sidebar.toggle("Habilitar Sugestões IA (Ollama)", key='ollama_enabled', help="Desabilitar pode melhorar a performance se não precisar das sugestões.")
+else:
+    st.sidebar.caption("Sugestões IA (Ollama) indisponíveis.")
+# --- FIM: Toggle --- 
 
 # --- Conteúdo Principal (Condicional ao Modo) ---
 
@@ -753,8 +765,10 @@ elif app_mode == "Editar Metadados":
                     )
                     obj_data["description"] = new_obj_desc
                 with btn_ai_obj_area:
-                    if st.button("Sugerir IA", key=f"btn_ai_obj_{selected_object}", use_container_width=True, disabled=not OLLAMA_AVAILABLE):
-                        # ... (Lógica botão IA objeto existente) ...
+                    if st.button("Sugerir IA", key=f"btn_ai_obj_{selected_object}", use_container_width=True, disabled=not OLLAMA_AVAILABLE or not st.session_state.get('ollama_enabled', True)):
+                        # Adapta prompt para objeto
+                        prompt_object = f"Sugira descrição concisa pt-br para o objeto de banco de dados '{selected_object}' (tipo: {selected_object_technical_type}). Propósito? Responda só descrição."
+                        suggestion = generate_ai_description(prompt_object)
                         if suggestion:
                              st.session_state.metadata[metadata_key_type][selected_object]['description'] = suggestion
                              st.rerun()
@@ -857,7 +871,7 @@ elif app_mode == "Editar Metadados":
                                     col_meta_data["description"] = current_col_desc_saved # Garante que o valor salvo seja mantido se não editado
 
                             with btns_col_area:
-                                if st.button("Sugerir IA", key=f"btn_ai_col_{col_name}", use_container_width=True, disabled=not OLLAMA_AVAILABLE):
+                                if st.button("Sugerir IA", key=f"btn_ai_col_{col_name}", use_container_width=True, disabled=not OLLAMA_AVAILABLE or not st.session_state.get('ollama_enabled', True)):
                                     prompt_column = (f"Sugira descrição concisa pt-br para coluna '{col_name}' ({col_type}) do objeto '{selected_object}'. Significado? Responda só descrição.")
                                     suggestion = generate_ai_description(prompt_column)
                                     if suggestion:
