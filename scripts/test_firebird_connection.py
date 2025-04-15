@@ -1,19 +1,27 @@
 import fdb
 import logging
 import sys
+import os
+from dotenv import load_dotenv
+
+# Adicionado: Carregar variáveis de ambiente do arquivo .env
+load_dotenv()
 
 # Configuração básica de logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# --- Configurações da Conexão Firebird ---
-# !!! SUBSTITUA PELOS SEUS DADOS REAIS !!!
-FIREBIRD_HOST = 'localhost'  # Ou o IP/nome do servidor onde o Firebird está rodando
-FIREBIRD_PORT = 3050         # Porta padrão do Firebird
-# Caminho completo para o arquivo do banco de dados (.fdb)
-FIREBIRD_DB_PATH = 'C:/Projetos/Dados.fdb' 
-FIREBIRD_USER = 'SYSDBA'     # Usuário do banco (padrão é SYSDBA)
-FIREBIRD_PASSWORD = 'M@nagers2023' # Senha do usuário (padrão é masterkey)
-FIREBIRD_CHARSET = 'WIN1252'    # Charset da conexão (ajuste se necessário, ex: WIN1252)
+# --- Configurações da Conexão Firebird (Lidas do Ambiente) ---
+FIREBIRD_HOST = os.getenv("FIREBIRD_HOST", "localhost")
+FIREBIRD_PORT = int(os.getenv("FIREBIRD_PORT", "3050"))
+FIREBIRD_DB_PATH = os.getenv("FIREBIRD_DB_PATH")
+FIREBIRD_USER = os.getenv("FIREBIRD_USER", "SYSDBA")
+FIREBIRD_PASSWORD = os.getenv("FIREBIRD_PASSWORD")
+FIREBIRD_CHARSET = os.getenv("FIREBIRD_CHARSET", "WIN1252")
+
+# Verifica se as variáveis essenciais foram carregadas
+if not FIREBIRD_DB_PATH or not FIREBIRD_PASSWORD:
+    logging.error("Erro: Variáveis FIREBIRD_DB_PATH ou FIREBIRD_PASSWORD não definidas no .env ou ambiente.")
+    sys.exit(1)
 
 def test_connection():
     """Tenta conectar ao banco de dados Firebird e executa uma query simples."""

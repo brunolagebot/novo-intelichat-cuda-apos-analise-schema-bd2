@@ -2,18 +2,27 @@ import fdb
 import logging
 import json
 import sys
+import os
+from dotenv import load_dotenv
+
+# Adicionado: Carregar variáveis de ambiente do arquivo .env
+load_dotenv()
 
 # Configuração básica de logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# --- Configurações da Conexão Firebird ---
-# TODO: Considerar mover para um arquivo .env ou configuração externa
-FIREBIRD_HOST = 'localhost'
-FIREBIRD_PORT = 3050
-FIREBIRD_DB_PATH = 'C:/Projetos/Dados.fdb' # Use o caminho do seu banco!
-FIREBIRD_USER = 'SYSDBA'
-FIREBIRD_PASSWORD = 'M@nagers2023' # Use sua senha!
-FIREBIRD_CHARSET = 'WIN1252' # Ajuste conforme seu banco
+# --- Configurações da Conexão Firebird (Lidas do Ambiente) ---
+FIREBIRD_HOST = os.getenv("FIREBIRD_HOST", "localhost")
+FIREBIRD_PORT = int(os.getenv("FIREBIRD_PORT", "3050")) # Converte para int
+FIREBIRD_DB_PATH = os.getenv("FIREBIRD_DB_PATH") # Essencial ter no .env
+FIREBIRD_USER = os.getenv("FIREBIRD_USER", "SYSDBA")
+FIREBIRD_PASSWORD = os.getenv("FIREBIRD_PASSWORD") # Essencial ter no .env
+FIREBIRD_CHARSET = os.getenv("FIREBIRD_CHARSET", "WIN1252")
+
+# Verifica se as variáveis essenciais foram carregadas
+if not FIREBIRD_DB_PATH or not FIREBIRD_PASSWORD:
+    logging.error("Erro: Variáveis FIREBIRD_DB_PATH ou FIREBIRD_PASSWORD não definidas no .env ou ambiente.")
+    sys.exit(1)
 
 # --- Configuração de Saída ---
 OUTPUT_FILE = 'data/schema_dataset.jsonl' # Arquivo para o dataset de fine-tuning
@@ -264,7 +273,6 @@ def save_dataset_to_jsonl(dataset, filename):
     """Salva o dataset formatado em um arquivo JSON Lines."""
     try:
         # Garante que o diretório de dados exista
-        import os
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         
         with open(filename, 'w', encoding='utf-8') as f:
