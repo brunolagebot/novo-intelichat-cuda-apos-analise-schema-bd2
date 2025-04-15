@@ -507,7 +507,7 @@ if 'latest_db_timestamp' not in st.session_state:
 metadata_dict = st.session_state.metadata # Referência local
 # NOVO: Inicializar estado para Ollama
 if 'ollama_enabled' not in st.session_state:
-    st.session_state.ollama_enabled = True
+    st.session_state.ollama_enabled = False # MUDANÇA: Padrão para desabilitado
 
 # --- Barra Lateral --- 
 st.sidebar.title("Navegação e Ações")
@@ -990,10 +990,23 @@ elif app_mode == "Editar Metadados":
                         st.session_state['excel_export_error'] = None
                     else:
                         try:
+                            # --- INÍCIO: Tratamento de Tipos para Excel ---
+                            df_to_export = export_data.copy() # Trabalhar com cópia
+                            for col in df_to_export.columns:
+                                # Verifica se a coluna é do tipo objeto e se contém bytes (indicativo de BLOB)
+                                if df_to_export[col].dtype == 'object':
+                                    # Checa o primeiro valor não nulo para ver se é bytes
+                                    first_non_null = df_to_export[col].dropna().iloc[0] if not df_to_export[col].dropna().empty else None
+                                    if isinstance(first_non_null, bytes):
+                                        logger.info(f"Coluna '{col}' detectada como BLOB, substituindo por placeholder.")
+                                        # Aplica a substituição para todos os valores bytes na coluna
+                                        df_to_export[col] = df_to_export[col].apply(lambda x: "[BLOB Data]" if isinstance(x, bytes) else x)
+                            # --- FIM: Tratamento de Tipos para Excel ---
+
                             # Criar buffer de bytes em memória
                             output = io.BytesIO()
                             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                                export_data.to_excel(writer, index=False, sheet_name=selected_object[:31]) # Limita nome da aba
+                                df_to_export.to_excel(writer, index=False, sheet_name=selected_object[:31]) # Usa o DataFrame modificado
                             # Salva os bytes e o nome do arquivo no estado
                             st.session_state['excel_export_data'] = output.getvalue()
                             st.session_state['excel_export_filename'] = f"amostra_{selected_object}.xlsx"
