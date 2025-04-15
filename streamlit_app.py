@@ -9,6 +9,7 @@ import pandas as pd # NOVO: Para o DataFrame da visão geral
 import fdb # NOVO: Para conectar ao Firebird
 import subprocess # NOVO: Para executar o script externo
 import sys # NOVO: Para obter o executável python correto
+import io # NOVO: Para manipulação de bytes em memória (Excel)
 
 # Configuração básica de logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -956,6 +957,79 @@ elif app_mode == "Editar Metadados":
                     else: # Se retornou uma string de erro
                         st.error(f"Falha ao carregar amostra: {sample_data}")
             # --- FIM: Seção de Pré-visualização de Dados ---
+
+            # --- NOVO: Seção de Exportação Excel ---
+            st.divider()
+            st.subheader("📤 Exportar Amostra de Dados (Excel)")
+            num_rows_export = st.number_input(
+                "Número de linhas para exportar:",
+                min_value=1,
+                value=100, # Default maior para exportação
+                step=10,
+                key=f"num_rows_export_{selected_object}",
+                help="Defina quantas linhas da amostra serão incluídas no arquivo Excel."
+            )
+            
+            if st.button("Gerar Amostra para Exportar", key=f"generate_export_{selected_object}"):
+                logger.info(f"Gerando amostra de {num_rows_export} linhas para exportar de {selected_object}...")
+                # Usa os mesmos parâmetros de conexão da busca de timestamp
+                export_data = fetch_sample_data(
+                    db_path_for_ts,
+                    db_user_for_ts,
+                    db_password_for_ts,
+                    db_charset_for_ts,
+                    selected_object, 
+                    num_rows_export
+                )
+                
+                if isinstance(export_data, pd.DataFrame):
+                    if export_data.empty:
+                        st.warning(f"Nenhum dado retornado para '{selected_object}'. O arquivo Excel não será gerado.")
+                        st.session_state['excel_export_data'] = None
+                        st.session_state['excel_export_filename'] = None
+                        st.session_state['excel_export_error'] = None
+                    else:
+                        try:
+                            # Criar buffer de bytes em memória
+                            output = io.BytesIO()
+                            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                                export_data.to_excel(writer, index=False, sheet_name=selected_object[:31]) # Limita nome da aba
+                            # Salva os bytes e o nome do arquivo no estado
+                            st.session_state['excel_export_data'] = output.getvalue()
+                            st.session_state['excel_export_filename'] = f"amostra_{selected_object}.xlsx"
+                            st.session_state['excel_export_error'] = None
+                            logger.info(f"Amostra para {selected_object} gerada e pronta para download.")
+                        except Exception as e:
+                            logger.exception("Erro ao gerar o arquivo Excel em memória.")
+                            st.session_state['excel_export_data'] = None
+                            st.session_state['excel_export_filename'] = None
+                            st.session_state['excel_export_error'] = f"Erro ao gerar Excel: {e}"
+                else: # Erro retornado por fetch_sample_data
+                    st.session_state['excel_export_data'] = None
+                    st.session_state['excel_export_filename'] = None
+                    st.session_state['excel_export_error'] = f"Falha ao buscar dados para exportar: {export_data}"
+            
+            # Exibir botão de download ou erro (fora do if do botão gerar)
+            if st.session_state.get('excel_export_data') and st.session_state.get('excel_export_filename'):
+                st.download_button(
+                    label="⬇️ Baixar Arquivo Excel",
+                    data=st.session_state['excel_export_data'],
+                    file_name=st.session_state['excel_export_filename'],
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"download_excel_{selected_object}"
+                )
+                # Limpa estado após exibir o botão (para não reaparecer)
+                # st.session_state['excel_export_data'] = None # Comentar para permitir múltiplos downloads? Não, melhor limpar.
+                # st.session_state['excel_export_filename'] = None
+                st.session_state['excel_export_data'] = None # Garante limpeza após tentativa de download
+                st.session_state['excel_export_filename'] = None
+            elif st.session_state.get('excel_export_error'):
+                st.error(st.session_state['excel_export_error'])
+                # Limpa erro após exibir
+                # st.session_state['excel_export_error'] = None
+                st.session_state['excel_export_error'] = None
+            
+            # --- FIM: Seção de Exportação Excel ---
 
             # --- Botão Salvar Edição --- 
             st.divider()

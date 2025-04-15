@@ -9653,7 +9653,7 @@
             }
         },
         "TABELA_NF_SAIDA": {
-            "description": "",
+            "description": " \"Armazena as informações completas das notas fiscais de saída emitidas pelo frigorífico. Cada linha representa uma nota fiscal ou um item de venda, com dados da empresa emissora, cliente, produtos comercializados (com ou sem osso), valores tributários, datas de emissão e saída, e informações auxiliares como XML da NF-e e status de autorização",
             "COLUMNS": {
                 "NFS_EMPRESA": {
                     "description": "Código que representa a empresa responsável pelos dados da linha em contexto.",
