@@ -223,7 +223,7 @@ def extract_technical_schema(conn):
 def calculate_fk_reference_counts(schema_data):
     """Calcula quantas vezes cada tabela/coluna é referenciada por FKs."""
     table_ref_counts = defaultdict(int)
-    column_ref_counts = defaultdict(lambda: defaultdict(int))
+    column_ref_counts_flat = defaultdict(int)
     
     logger.info("Calculando contagens de referência de FK...")
     for relation_name, data in schema_data.items():
@@ -237,7 +237,7 @@ def calculate_fk_reference_counts(schema_data):
                         # Tenta mapear coluna local para coluna referenciada pela posição
                         local_col = fk["columns"][i] if i < len(fk["columns"]) else "?"
                         logger.debug(f"FK Ref: {relation_name}.{local_col} -> {target_table}.{target_col}")
-                        column_ref_counts[target_table][target_col] += 1
+                        column_ref_counts_flat[f"{target_table}.{target_col}"] += 1
                         
     logger.info("Cálculo de contagens de referência concluído.")
     # Adiciona as contagens de volta à estrutura do schema para facilitar o acesso
@@ -245,20 +245,10 @@ def calculate_fk_reference_counts(schema_data):
         if table_name in schema_data:
              schema_data[table_name]["referenced_by_fk_count"] = count
              
-    for table_name, col_counts in column_ref_counts.items():
-         if table_name in schema_data:
-            for col_name, count in col_counts.items():
-                # Encontra a coluna correspondente e adiciona a contagem
-                for col in schema_data[table_name].get("columns", []):
-                    if col["name"] == col_name:
-                        col["referenced_by_fk_count"] = count
-                        break
-                        
-    return schema_data # Retorna o schema modificado com as contagens
-
+    return dict(column_ref_counts_flat)
 
 def save_technical_details(schema_data, filename):
-    """Salva os detalhes técnicos do schema (com contagens) em JSON."""
+    """Salva os detalhes técnicos (schema e contagens) em um arquivo JSON."""
     logger.info(f"Salvando detalhes técnicos do schema em {filename}...")
     try:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
@@ -298,8 +288,13 @@ if __name__ == "__main__":
         technical_schema = extract_technical_schema(conn)
         
         if technical_schema:
-            schema_with_counts = calculate_fk_reference_counts(technical_schema)
-            save_technical_details(schema_with_counts, OUTPUT_JSON_FILE)
+            fk_counts_dict = calculate_fk_reference_counts(technical_schema)
+            if fk_counts_dict:
+                technical_schema['fk_reference_counts'] = fk_counts_dict
+                logger.info(f"Contagens de FK adicionadas ao schema ({len(fk_counts_dict)} entradas).")
+            else:
+                logger.warning("Nenhuma contagem de FK foi calculada.")
+            save_technical_details(technical_schema, OUTPUT_JSON_FILE)
         else:
             logger.error("Falha ao extrair o schema técnico.")
             sys.exit(1)
