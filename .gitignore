@@ -174,4 +174,4 @@ data/technical_schema_details.json
 data/faiss_column_index.idx
 
 # !! NÃO IGNORAR METADADOS MANUAIS !!
-# Manter etapas-sem-gpu/schema_metadata.json 
+# Manter etapas-sem-gpu/schema_metadata.json data/schema_with_embeddings.json
