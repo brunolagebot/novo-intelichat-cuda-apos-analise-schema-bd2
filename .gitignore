@@ -165,4 +165,13 @@ results-*/
 *.tmp
 *.bak
 *.swp
-*~ 
+*~
+
+# Arquivos de dados gerados e potencialmente grandes (podem ser recriados pelos scripts)
+data/schema_with_embeddings.json
+data/combined_schema_details.json
+data/technical_schema_details.json
+data/faiss_column_index.idx
+
+# !! NÃO IGNORAR METADADOS MANUAIS !!
+# Manter etapas-sem-gpu/schema_metadata.json 

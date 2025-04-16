@@ -82,3 +82,18 @@ Editar seus metadados (ex: usando o app Streamlit e salvando schema_metadata.jso
 Executar o script de merge (python scripts/merge_schema_data.py) para atualizar o data/combined_schema_details.json.
 Executar o script de geração de embeddings (python scripts/generate_embeddings.py) para criar um data/schema_with_embeddings.json totalmente novo e atualizado.
 Isso garante que os embeddings sempre correspondam à versão mais recente dos seus metadados documentados.
+
+Entendido. Vamos aprimorar a aba "Análise" para destacar tabelas e colunas com base na estrutura das chaves e adicionar um indicador de "Importância".
+Plano:
+Refinar Análise de Chaves: No streamlit_app.py, criaremos lógica para identificar explicitamente:
+Tabelas com Chaves Primárias Compostas.
+Tabelas de Junção (onde colunas da PK são também FKs).
+Colunas que participam de Chaves Estrangeiras Compostas.
+Calcular Indicador de Importância: Definiremos níveis de importância (ex: Máxima, Alta, Média) para cada coluna com base em:
+Seu papel na chave (PK, FK, Composta, Junção).
+A contagem de referências (usando fk_reference_counts já existente). Uma PK simples em uma tabela muito referenciada é mais "importante" do que uma em uma tabela isolada.
+Atualizar Aba "Análise": Modificar a seção app_mode == "Análise" para:
+Exibir listas/tabelas para as categorias de chaves identificadas (PK Composta, Junção, FK Composta).
+Na tabela principal de "Colunas Mais Referenciadas", adicionar a coluna "Importância" calculada.
+Implementação:
+Começarei modificando o streamlit_app.py para realizar a análise estrutural das chaves e calcular a importância.

@@ -10,6 +10,9 @@ import fdb # NOVO: Para conectar ao Firebird
 import subprocess # NOVO: Para executar o script externo
 import sys # NOVO: Para obter o executável python correto
 import io # NOVO: Para manipulação de bytes em memória (Excel)
+import numpy as np # NOVO: Para manipulação de vetores
+import faiss # NOVO: Para busca por similaridade
+import copy # NOVO: Para deepcopy
 
 # Configuração básica de logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -62,6 +65,10 @@ TYPE_EXPLANATIONS = {
     "DECIMAL": "Número decimal exato (precisão definida).",
     "TIME": "Hora (hora, minuto, segundo)."
 }
+
+# --- NOVO: Constantes FAISS ---
+FAISS_INDEX_FILE = 'data/faiss_column_index.idx' # Opcional: Salvar/Carregar índice pré-construído
+EMBEDDING_DIMENSION = 768 # Ajuste conforme a dimensão do seu modelo ('nomic-embed-text' usa 768)
 
 def get_type_explanation(type_string):
     """Tenta encontrar uma explicação para o tipo SQL base."""
@@ -561,32 +568,393 @@ def apply_heuristics_globally(metadata_dict, technical_schema):
     return updated_count, already_filled_count, not_found_count
 # --- FIM NOVA Função ---
 
-# --- Interface Streamlit --- MODIFICADA PARA MODOS
-st.set_page_config(layout="wide")
-st.title("📝 Editor/Visualizador de Metadados do Schema") # Título mais genérico
+# --- NOVO: Funções FAISS ---
 
-# --- Carregamento Inicial --- 
-technical_schema_data = load_technical_schema(TECHNICAL_SCHEMA_FILE)
-if technical_schema_data is None: st.stop()
+@st.cache_resource # Cache do índice FAISS para performance
+def build_faiss_index(schema_data):
+    """Constrói um índice FAISS a partir dos embeddings das colunas no schema_data."""
+    embeddings = []
+    index_to_key = [] # Mapeia o índice interno do FAISS para (table_name, col_index)
 
-if 'metadata' not in st.session_state:
-    st.session_state.metadata = load_metadata(METADATA_FILE)
-    if st.session_state.metadata is None: st.stop()
+    logger.info("Construindo índice FAISS a partir dos embeddings...")
+    items_with_embeddings = 0
+    items_without_embeddings = 0
 
-# NOVO: Carrega contagens cacheadas
-if 'overview_counts' not in st.session_state:
-    st.session_state.overview_counts = load_overview_counts(OVERVIEW_COUNTS_FILE)
+    for obj_name, obj_data in schema_data.items():
+        if isinstance(obj_data, dict) and 'columns' in obj_data:
+            for i, col_data in enumerate(obj_data['columns']):
+                embedding = col_data.get('embedding')
+                if embedding and isinstance(embedding, list) and len(embedding) == EMBEDDING_DIMENSION:
+                    embeddings.append(embedding)
+                    index_to_key.append((obj_name, i))
+                    items_with_embeddings += 1
+                else:
+                    # Guardar espaço no mapeamento mesmo sem embedding válido,
+                    # ou pular? Optamos por pular para simplificar.
+                    items_without_embeddings += 1
+                    # logger.debug(f"Coluna {obj_name}.{col_data.get('name', i)} sem embedding válido.")
 
-# NOVO: Inicializa estado para timestamp sob demanda
-if 'latest_db_timestamp' not in st.session_state:
-    st.session_state.latest_db_timestamp = None # Inicializa como None
+    if not embeddings:
+        logger.warning("Nenhum embedding válido encontrado para construir o índice FAISS.")
+        return None, []
 
-metadata_dict = st.session_state.metadata # Referência local
-# NOVO: Inicializar estado para Ollama
-if 'ollama_enabled' not in st.session_state:
-    st.session_state.ollama_enabled = False # MUDANÇA: Padrão para desabilitado
+    embeddings_np = np.array(embeddings).astype('float32') # FAISS requer float32
+    dimension = embeddings_np.shape[1]
+    if dimension != EMBEDDING_DIMENSION:
+        logger.warning(f"Dimensão dos embeddings ({dimension}) difere da esperada ({EMBEDDING_DIMENSION}). Ajuste EMBEDDING_DIMENSION.")
+        # Poderia tentar continuar, mas é mais seguro parar se a dimensão estiver errada.
+        # return None, []
 
-# --- Barra Lateral --- 
+    # Usar IndexFlatL2 para busca exata por distância L2 (Euclidiana)
+    # Para datasets muito grandes, considerar índices aproximados como IndexIVFFlat
+    index = faiss.IndexFlatL2(dimension)
+    index.add(embeddings_np)
+
+    logger.info(f"Índice FAISS construído com {index.ntotal} vetores. {items_without_embeddings} colunas ignoradas por falta de embedding.")
+
+    # Opcional: Salvar índice para carregamento rápido futuro
+    # try:
+    #     faiss.write_index(index, FAISS_INDEX_FILE)
+    #     logger.info(f"Índice FAISS salvo em {FAISS_INDEX_FILE}")
+    # except Exception as e:
+    #     logger.error(f"Erro ao salvar índice FAISS: {e}")
+
+    return index, index_to_key
+
+def find_similar_columns(faiss_index, schema_data, index_to_key_map, target_embedding, k=5):
+    """Busca as k colunas mais similares no índice FAISS que possuem descrição."""
+    if faiss_index is None or not isinstance(target_embedding, np.ndarray):
+        return []
+
+    target_embedding_np = target_embedding.astype('float32').reshape(1, -1)
+    try:
+        # Busca k+1 vizinhos (incluindo o próprio item)
+        distances, indices = faiss_index.search(target_embedding_np, k + 1)
+    except Exception as e:
+        logger.error(f"Erro durante a busca FAISS: {e}")
+        return []
+
+    similar_columns = []
+    # indices[0] contém a lista de índices dos vizinhos mais próximos
+    for i in range(1, len(indices[0])): # Pula o primeiro resultado (ele mesmo)
+        idx = indices[0][i]
+        if idx == -1: # FAISS pode retornar -1 se não encontrar vizinhos suficientes
+            continue
+
+        try:
+            table_name, col_index = index_to_key_map[idx]
+            column_data = schema_data.get(table_name, {}).get('columns', [])[col_index]
+            col_name = column_data.get('name', 'N/A')
+            description = column_data.get('business_description', '').strip()
+
+            if description: # Adiciona apenas se tiver descrição
+                similar_columns.append({
+                    'table': table_name,
+                    'column': col_name,
+                    'description': description,
+                    'distance': float(distances[0][i]) # Distância Euclidiana ao quadrado (L2)
+                })
+                if len(similar_columns) == k: # Para se já achou k vizinhos com descrição
+                    break
+        except IndexError:
+            logger.warning(f"Índice FAISS {idx} fora dos limites do mapeamento index_to_key_map.")
+            continue
+        except Exception as e:
+            logger.error(f"Erro ao processar resultado FAISS com índice {idx}: {e}")
+            continue
+
+    return similar_columns
+
+# --- NOVO: Função para Comparar Metadados ---
+def compare_metadata_changes(initial_meta, current_meta):
+    """Compara dois dicionários de metadados e conta novas descrições/notas."""
+    new_descriptions = 0
+    new_notes = 0
+    if not initial_meta or not current_meta:
+        logger.warning("Metadados iniciais ou atuais ausentes para comparação.")
+        return 0, 0
+
+    # Iterar sobre tipos de objeto (TABLES, VIEWS)
+    for obj_type_key in list(current_meta.keys()): # Usar list() para evitar erro de modificação durante iteração
+        if obj_type_key not in ['TABLES', 'VIEWS']:
+            continue # Pular outras chaves como _GLOBAL_CONTEXT
+
+        current_objects = current_meta.get(obj_type_key, {})
+        initial_objects = initial_meta.get(obj_type_key, {})
+
+        for obj_name, current_obj_data in current_objects.items():
+            initial_obj_data = initial_objects.get(obj_name, {})
+            current_cols = current_obj_data.get('COLUMNS', {})
+            initial_cols = initial_obj_data.get('COLUMNS', {})
+
+            for col_name, current_col_data in current_cols.items():
+                initial_col_data = initial_cols.get(col_name, {})
+
+                # Compara Descrição
+                current_desc = current_col_data.get('description', '').strip()
+                initial_desc = initial_col_data.get('description', '').strip()
+                if current_desc and not initial_desc:
+                    new_descriptions += 1
+
+                # Compara Notas de Mapeamento
+                current_notes = current_col_data.get('value_mapping_notes', '').strip()
+                initial_notes = initial_col_data.get('value_mapping_notes', '').strip()
+                if current_notes and not initial_notes:
+                    new_notes += 1
+
+    logger.info(f"Comparação de metadados: {new_descriptions} novas descrições, {new_notes} novas notas.")
+    return new_descriptions, new_notes
+# --- FIM Função Comparar ---
+
+# --- FIM Função Comparar ---
+
+# --- NOVO: Funções para Análise Estrutural e Importância ---
+
+@st.cache_data # Cacheia a análise estrutural, pois só depende do schema técnico
+def analyze_key_structure(schema_data):
+    """Analisa o schema_data para identificar tipos de chaves e calcular importância inicial."""
+    logger.info("Analisando estrutura de chaves do schema...")
+    composite_pk_tables = {}
+    junction_tables = {}
+    composite_fk_details = {}
+    column_roles = defaultdict(lambda: {'role': 'Normal', 'importance_score': 0, 'details': ''}) # Default para coluna normal
+
+    fk_ref_counts = schema_data.get('fk_reference_counts', {})
+
+    for table_name, table_data in schema_data.items():
+        if not isinstance(table_data, dict) or table_data.get('object_type') not in ['TABLE', 'VIEW']:
+            continue
+
+        constraints = table_data.get('constraints', {})
+        primary_keys = constraints.get('primary_key', [])
+        foreign_keys = constraints.get('foreign_keys', [])
+        columns_in_table = {col.get('name') for col in table_data.get('columns', []) if col.get('name')}
+
+        # 1. Analisar Chaves Primárias
+        pk_column_names = set()
+        is_composite_pk = False
+        if primary_keys:
+            pk_def = primary_keys[0] # Assume-se uma PK por tabela para simplificar
+            pk_cols = pk_def.get('columns', [])
+            pk_column_names.update(pk_cols)
+            if len(pk_cols) > 1:
+                is_composite_pk = True
+                composite_pk_tables[table_name] = pk_cols
+                for col_name in pk_cols:
+                    column_roles[(table_name, col_name)]['role'] = 'PK Comp'
+                    column_roles[(table_name, col_name)]['importance_score'] += 5 # Alta importância base
+            elif len(pk_cols) == 1:
+                 col_name = pk_cols[0]
+                 column_roles[(table_name, col_name)]['role'] = 'PK'
+                 column_roles[(table_name, col_name)]['importance_score'] += 3 # Importância base média
+
+        # 2. Analisar Chaves Estrangeiras e Tabelas de Junção
+        is_junction_table = False
+        junction_fk_details = []
+        fk_columns_in_table = set()
+
+        for fk in foreign_keys:
+            fk_cols = fk.get('columns', [])
+            ref_table = fk.get('references_table')
+            ref_cols = fk.get('references_columns', [])
+            fk_columns_in_table.update(fk_cols)
+
+            if len(fk_cols) > 1:
+                # FK Composta
+                for i, col_name in enumerate(fk_cols):
+                    if col_name in column_roles[(table_name, col_name)] and column_roles[(table_name, col_name)]['role'] == 'PK Comp':
+                         column_roles[(table_name, col_name)]['role'] = 'PK/FK Comp' # Promove se for PK e FK composta
+                         column_roles[(table_name, col_name)]['importance_score'] += 2 # Bônus
+                    elif col_name not in pk_column_names: # Só marca como FK Comp se não for PK simples
+                        column_roles[(table_name, col_name)]['role'] = 'FK Comp'
+                    column_roles[(table_name, col_name)]['importance_score'] += 1 # Leve aumento por ser parte de FK composta
+                    # Armazena detalhes da FK composta
+                    try: ref_col_name = ref_cols[i] if ref_cols and i < len(ref_cols) else 'N/A'
+                    except IndexError: ref_col_name = 'N/A'
+                    detail_str = f"parte de FK composta referenciando {ref_table}.{ref_col_name}"
+                    column_roles[(table_name, col_name)]['details'] = detail_str
+                    composite_fk_details[(table_name, col_name)] = detail_str
+            elif len(fk_cols) == 1:
+                # FK Simples
+                col_name = fk_cols[0]
+                if col_name in pk_column_names:
+                    # É PK e FK (potencial tabela de junção)
+                    if column_roles[(table_name, col_name)]['role'] == 'PK Comp':
+                        column_roles[(table_name, col_name)]['role'] = 'PK/FK Comp' # Promove se for PK Comp e FK simples
+                        column_roles[(table_name, col_name)]['importance_score'] += 2
+                    else:
+                         column_roles[(table_name, col_name)]['role'] = 'PK/FK'
+                         column_roles[(table_name, col_name)]['importance_score'] += 4 # Alta importância base
+                    junction_fk_details.append(f"{col_name} -> {ref_table}.{ref_cols[0] if ref_cols else 'N/A'}")
+                else:
+                    # Apenas FK simples
+                    column_roles[(table_name, col_name)]['role'] = 'FK'
+                    column_roles[(table_name, col_name)]['importance_score'] += 1 # Baixa importância base
+                    try: ref_col_name = ref_cols[0] if ref_cols else 'N/A'
+                    except IndexError: ref_col_name = 'N/A'
+                    column_roles[(table_name, col_name)]['details'] = f"-> {ref_table}.{ref_col_name}"
+
+            # Checa se a coluna da FK também é parte da PK (para identificar junção)
+            if pk_column_names.intersection(fk_cols):
+                 is_junction_table = True
+
+        # Se a tabela tem PK e todas as colunas da PK são também FKs, é uma tabela de junção
+        if is_junction_table and pk_column_names and pk_column_names.issubset(fk_columns_in_table):
+             junction_tables[table_name] = junction_fk_details
+             # Aumenta a importância das colunas PK/FK em tabelas de junção
+             for col_name in pk_column_names:
+                  column_roles[(table_name, col_name)]['importance_score'] += 2
+
+    # 3. Ajustar Score de Importância baseado na Contagem de Referências
+    # Define limites para categorias de contagem (ajustar conforme necessário)
+    HIGH_REF_THRESHOLD = 50
+    MEDIUM_REF_THRESHOLD = 10
+
+    for (table_name, col_name), role_data in column_roles.items():
+        full_col_name = f"{table_name}.{col_name}"
+        ref_count = fk_ref_counts.get(full_col_name, 0)
+        
+        # Bônus por ser referenciado
+        if ref_count >= HIGH_REF_THRESHOLD:
+            role_data['importance_score'] += 3
+        elif ref_count >= MEDIUM_REF_THRESHOLD:
+            role_data['importance_score'] += 2
+        elif ref_count > 0:
+            role_data['importance_score'] += 1
+            
+        # Ajuste fino: PKs simples muito referenciadas são muito importantes
+        if role_data['role'] == 'PK' and ref_count >= HIGH_REF_THRESHOLD:
+            role_data['importance_score'] += 3 # Bônus extra
+            
+        # Ajuste fino: Colunas normais em tabelas muito referenciadas (indica tabela importante)
+        table_ref_count_approx = sum(fk_ref_counts.get(f"{table_name}.{c}", 0) for c in columns_in_table if f"{table_name}.{c}" in fk_ref_counts)
+        if role_data['role'] == 'Normal' and table_ref_count_approx > HIGH_REF_THRESHOLD * 2: # Heurística grosseira
+             role_data['importance_score'] += 1
+             
+    # 4. Definir Nível de Importância (Texto)
+    for role_data in column_roles.values():
+        score = role_data['importance_score']
+        if score >= 8:
+            role_data['importance_level'] = 'Máxima'
+        elif score >= 5:
+            role_data['importance_level'] = 'Alta'
+        elif score >= 2:
+            role_data['importance_level'] = 'Média'
+        else:
+             role_data['importance_level'] = 'Baixa'
+
+    logger.info(f"Análise estrutural concluída. PKs Comp: {len(composite_pk_tables)}, Junção: {len(junction_tables)}, FKs Comp: {len(composite_fk_details)}")
+    # Converter defaultdict para dict antes de retornar para ser picklable
+    return composite_pk_tables, junction_tables, composite_fk_details, dict(column_roles)
+
+# --- FIM Funções Análise Estrutural ---
+
+
+# --- Função Principal / Carregamento de Dados ---
+def load_and_process_data():
+    technical_schema = load_technical_schema(TECHNICAL_SCHEMA_FILE) # Carrega dados técnicos combinados
+    if technical_schema is None:
+        st.stop()
+
+    metadata_dict = load_metadata(METADATA_FILE)
+    if metadata_dict is None:
+        # Tenta criar um vazio se não existir
+        metadata_dict = {"TABLES": {}, "VIEWS": {}}
+
+    overview_counts = load_overview_counts(OVERVIEW_COUNTS_FILE) # Carrega contagens
+
+    # NOVO: Armazena estado inicial dos metadados se ainda não existir
+    if 'initial_metadata' not in st.session_state:
+        logger.info("Armazenando estado inicial dos metadados.")
+        try:
+            st.session_state.initial_metadata = copy.deepcopy(metadata_dict)
+        except Exception as e:
+            logger.error(f"Erro ao fazer deepcopy dos metadados iniciais: {e}")
+            st.session_state.initial_metadata = {} # Define como vazio em caso de erro
+
+    # NOVO: Construir índice FAISS
+    # Opcional: Tentar carregar índice pré-construído
+    # faiss_index = None
+    # index_to_key_map = []
+    # if os.path.exists(FAISS_INDEX_FILE):
+    #     try:
+    #         faiss_index = faiss.read_index(FAISS_INDEX_FILE)
+    #         # Precisaria carregar o index_to_key_map também de algum lugar
+    #         logger.info(f"Índice FAISS carregado de {FAISS_INDEX_FILE}")
+    #         # Verificar se o mapeamento está sincronizado ou reconstruir
+    #     except Exception as e:
+    #         logger.error(f"Erro ao carregar índice FAISS de {FAISS_INDEX_FILE}: {e}")
+    #         faiss_index = None # Força a reconstrução
+
+    # if faiss_index is None: # Se não carregou ou não existe, constrói
+    faiss_index, index_to_key_map = build_faiss_index(technical_schema)
+
+    # Inicializa/Atualiza st.session_state
+    if 'metadata' not in st.session_state:
+        st.session_state.metadata = metadata_dict
+    if 'technical_schema' not in st.session_state:
+        st.session_state.technical_schema = technical_schema # Armazena schema técnico também
+    if 'overview_counts' not in st.session_state:
+        st.session_state.overview_counts = overview_counts if overview_counts else {} # Armazena contagens
+    if 'unsaved_changes' not in st.session_state:
+        st.session_state.unsaved_changes = False
+    if 'current_view' not in st.session_state:
+        st.session_state.current_view = 'overview' # 'overview', 'table_view', 'column_view'
+    if 'selected_object' not in st.session_state:
+        st.session_state.selected_object = None
+    if 'selected_column_index' not in st.session_state:
+        st.session_state.selected_column_index = None
+    if 'selected_object_type' not in st.session_state: # NOVO: table ou view
+        st.session_state.selected_object_type = None
+    if 'ollama_enabled' not in st.session_state: # NOVO: Toggle Ollama
+        st.session_state.ollama_enabled = False # Default para False
+    if 'db_path' not in st.session_state:
+        st.session_state.db_path = DEFAULT_DB_PATH
+    if 'db_user' not in st.session_state:
+        st.session_state.db_user = DEFAULT_DB_USER
+    if 'db_password' not in st.session_state:
+        st.session_state.db_password = os.getenv("FIREBIRD_PASSWORD", "") # Tenta pegar do .env
+    if 'db_charset' not in st.session_state:
+        st.session_state.db_charset = DEFAULT_DB_CHARSET
+    # NOVO: Inicializa estado para timestamp sob demanda
+    if 'latest_db_timestamp' not in st.session_state:
+        st.session_state.latest_db_timestamp = None # Inicializa como None
+    # NOVO: Armazenar índice FAISS e mapeamento no estado da sessão
+    if 'faiss_index' not in st.session_state:
+         st.session_state.faiss_index = faiss_index
+    if 'index_to_key_map' not in st.session_state:
+         st.session_state.index_to_key_map = index_to_key_map
+    # NOVO: Armazena resultados da análise estrutural
+    if 'key_analysis' not in st.session_state:
+        st.session_state.key_analysis = analyze_key_structure(technical_schema)
+
+
+# --- Interface Streamlit ---
+st.set_page_config(layout="wide", page_title="Editor de Metadados de Schema")
+
+# --- Carregamento Inicial e Inicialização do Estado ---
+# Chama a função para carregar dados e inicializar o estado da sessão
+load_and_process_data()
+# --- FIM: Carregamento Inicial ---
+
+
+# --- NOVO: Carrega contagens cacheadas (Movido para dentro de load_and_process_data) ---
+# if 'overview_counts' not in st.session_state:
+#     st.session_state.overview_counts = load_overview_counts(OVERVIEW_COUNTS_FILE)
+
+# --- NOVO: Inicializa estado para timestamp sob demanda (Movido para dentro de load_and_process_data) ---
+# if 'latest_db_timestamp' not in st.session_state:
+#     st.session_state.latest_db_timestamp = None # Inicializa como None
+
+# --- Referência local aos dados no estado da sessão ---
+metadata_dict = st.session_state.metadata
+technical_schema_data = st.session_state.technical_schema # NOVO: Usar do estado da sessão
+
+# --- NOVO: Inicializar estado para Ollama (Movido para dentro de load_and_process_data) ---
+# if 'ollama_enabled' not in st.session_state:
+#     st.session_state.ollama_enabled = False # MUDANÇA: Padrão para desabilitado
+
+# --- Barra Lateral ---
 st.sidebar.title("Navegação e Ações")
 
 # Seletor de Modo
@@ -765,6 +1133,8 @@ if app_mode == "Visão Geral":
                 logger.exception("Erro ao executar subprocesso de contagem")
                 progress_bar.progress(1.0, text="Erro Inesperado!") # Atualiza barra em caso de erro geral
 
+    st.caption("Este botão executa um script que se conecta ao banco de dados, recalcula a contagem de linhas de todas as tabelas/views e salva o resultado no arquivo de cache (`overview_counts.json`). Pode ser demorado.")
+
     st.divider() # Separador antes da tabela
     # --- FIM: Botão para Executar Contagem ---
     
@@ -784,6 +1154,7 @@ if app_mode == "Visão Geral":
         st.session_state.overview_counts = load_overview_counts(OVERVIEW_COUNTS_FILE)
         st.success("Contagens recarregadas.")
         st.rerun()
+    st.caption("Este botão apenas recarrega os dados do último cálculo de contagem salvo no arquivo (`overview_counts.json`), sem se conectar ao banco. É rápido e útil se o arquivo foi atualizado externamente.")
 
 elif app_mode == "Editar Metadados":
     st.header("Editor de Metadados")
@@ -926,8 +1297,48 @@ elif app_mode == "Editar Metadados":
                                     heuristic_source = source
                                     logger.info(f"Preenchendo '{selected_object}.{col_name}' com sugestão via {source}")
 
-                            if heuristic_source:
-                                st.caption(f"ℹ️ Sugestão preenchida ({heuristic_source}). Pode editar abaixo.")
+                                    st.caption(f"ℹ️ Sugestão preenchida ({heuristic_source}). Pode editar abaixo.")
+
+                            # --- NOVO: Busca por Similaridade FAISS ---
+                            col_embedding_data = tech_col_data.get('embedding') # Usa tech_col_data que já temos
+                            if st.session_state.get('faiss_index') and col_embedding_data:
+                                if st.button("🔍 Buscar Descrições Similares (FAISS)", key=f"faiss_search_{selected_object}_{col_name}"):
+                                    # Garantir que o embedding seja um array numpy float32
+                                    try:
+                                        target_embedding = np.array(col_embedding_data).astype('float32')
+                                        if target_embedding.shape[0] != EMBEDDING_DIMENSION:
+                                            st.error(f"Erro: Dimensão do embedding ({target_embedding.shape[0]}) diferente da esperada ({EMBEDDING_DIMENSION}). Verifique os embeddings.")
+                                            target_embedding = None # Impede a busca
+                                    except Exception as e:
+                                        st.error(f"Erro ao converter embedding para busca: {e}")
+                                        target_embedding = None
+
+                                    if target_embedding is not None:
+                                        with st.spinner("Buscando colunas similares..."):
+                                            similar_cols = find_similar_columns(
+                                                st.session_state.faiss_index,
+                                                st.session_state.technical_schema, # Usar schema técnico para obter nomes e descrições
+                                                st.session_state.index_to_key_map,
+                                                target_embedding,
+                                                k=5 # Buscar as 5 mais similares com descrição
+                                            )
+                                        if similar_cols:
+                                            with st.expander("💡 Colunas Similares Encontradas", expanded=True):
+                                                for sim_col in similar_cols:
+                                                    # Usar markdown para melhor formatação
+                                                    st.markdown(f"**`{sim_col['table']}.{sim_col['column']}`**")
+                                                    # Adicionar distância formatada
+                                                    st.caption(f"(Distância L2²: {sim_col['distance']:.4f})")
+                                                    # Usar st.markdown ou st.text_area para a descrição, dependendo do tamanho
+                                                    st.markdown(f"> _{sim_col['description']}_")
+                                                    st.markdown("---") # Separador visual
+                                        else:
+                                            st.info("Nenhuma coluna similar com descrição preenchida foi encontrada.")
+                            elif not col_embedding_data:
+                                st.caption("_(Sem embedding disponível para esta coluna para busca por similaridade)_")
+                            elif not st.session_state.get('faiss_index'):
+                                st.caption("_(Índice FAISS não disponível para busca por similaridade)_")
+                            # --- FIM Busca FAISS ---
 
                             # Layout Descrição + Botões IA/Propagar
                             desc_col_area, btns_col_area = st.columns([4, 1])
@@ -1124,89 +1535,175 @@ elif app_mode == "Editar Metadados":
             # --- Botão Salvar Edição --- 
             st.divider()
             if st.button("💾 Salvar Alterações nos Metadados", type="primary", key="save_edit_mode"):
+                # NOVO: Comparar antes de salvar
+                new_desc_count, new_notes_count = 0, 0
+                if 'initial_metadata' in st.session_state:
+                    new_desc_count, new_notes_count = compare_metadata_changes(
+                        st.session_state.initial_metadata,
+                        st.session_state.metadata
+                    )
+                else:
+                    logger.warning("Estado inicial dos metadados não encontrado para comparação.")
+
                 if save_metadata(st.session_state.metadata, METADATA_FILE):
-                    st.success(f"Metadados salvos com sucesso em `{METADATA_FILE}`!")
-                    try: load_metadata.clear(); logger.info("Cache de metadados limpo após salvar.")
-                    except Exception as e: logger.warning(f"Erro ao limpar cache: {e}")
-                else: st.error("Falha ao salvar metadados.")
+                    # NOVO: Mensagem de sucesso com contadores
+                    success_message = f"Metadados salvos com sucesso em `{METADATA_FILE}`!"
+                    if new_desc_count > 0 or new_notes_count > 0:
+                        success_message += f" ({new_desc_count} novas descrições, {new_notes_count} novas notas adicionadas nesta sessão)"
+                    st.success(success_message, icon="✅")
+
+                    try:
+                        load_metadata.clear()
+                        logger.info("Cache de metadados limpo após salvar.")
+                        # NOVO: Atualizar estado inicial após salvar com sucesso
+                        st.session_state.initial_metadata = copy.deepcopy(st.session_state.metadata)
+                        logger.info("Estado inicial dos metadados atualizado após salvar.")
+                    except Exception as e:
+                        logger.warning(f"Erro ao limpar cache ou atualizar estado inicial: {e}")
+                else:
+                    st.error("Falha ao salvar metadados.")
 
     else:
         st.info("Selecione um objeto para editar seus metadados.")
 
 # --- NOVO: Modo Análise ---
 elif app_mode == "Análise":
-    st.header("🔎 Análise do Schema")
+    st.header("🔎 Análise Estrutural e de Referências do Schema")
     st.caption(f"Analisando informações de: `{TECHNICAL_SCHEMA_FILE}`")
     st.divider()
 
-    st.subheader("Colunas Mais Referenciadas por Chaves Estrangeiras (FKs)")
-    
+    # Recupera a análise estrutural do cache
+    composite_pk_tables, junction_tables, composite_fk_details, column_roles = st.session_state.key_analysis
+
+    # --- Seção: Colunas Mais Referenciadas (com Importância) ---
+    st.subheader("Colunas Mais Referenciadas por FKs (com Prioridade)")
     if technical_schema_data and 'fk_reference_counts' in technical_schema_data:
         fk_counts = technical_schema_data['fk_reference_counts']
-        
         if not fk_counts:
             st.info("Nenhuma contagem de referência de FK encontrada no schema técnico.")
         else:
-            # Converter para lista de dicionários para o DataFrame
             fk_list = []
+            processed_columns = set()
+            # Primeiro, processa colunas com contagem de referência
             for key, count in fk_counts.items():
                 try:
                     table_name, column_name = key.split('.', 1)
+                    if not table_name or not column_name: continue
+
+                    role_info = column_roles.get((table_name, column_name), {'role': 'Normal', 'importance_level': 'Baixa'})
+                    # Ajuste: Usar technical_schema_data que já temos acesso
+                    metadata_info = technical_schema_data.get(table_name, {}).get('columns', [])
+                    col_data = next((col for col in metadata_info if col.get('name') == column_name), None)
                     
-                    # --- NOVO: Verifica metadados da coluna --- 
-                    has_description = False
-                    has_notes = False
-                    # Acessa o schema técnico combinado já carregado
-                    obj_data = technical_schema_data.get(table_name)
-                    if obj_data:
-                        columns_list = obj_data.get('columns', [])
-                        # Encontra os dados da coluna específica pelo nome
-                        col_data = next((col for col in columns_list if col.get('name') == column_name), None)
-                        if col_data:
-                            # Verifica se a descrição de negócio (adicionada pelo merge) existe e não está vazia
-                            desc_value = col_data.get('business_description')
-                            has_description = bool(desc_value and desc_value.strip())
-                            # Verifica se as notas de mapeamento (adicionadas pelo merge) existem e não estão vazias
-                            notes_value = col_data.get('value_mapping_notes')
-                            has_notes = bool(notes_value and notes_value.strip())
-                    # --- FIM NOVO ---
-                    
+                    # Correção: Verificar None antes de strip()
+                    col_desc = col_data.get('business_description') if col_data else None
+                    has_description = bool(col_desc.strip()) if col_desc else False
+                    col_notes = col_data.get('value_mapping_notes') if col_data else None
+                    has_notes = bool(col_notes.strip()) if col_notes else False
+
                     fk_list.append({
-                        "Tabela": table_name, 
-                        "Coluna": column_name, 
+                        "Importância": role_info['importance_level'],
+                        "Tabela": table_name,
+                        "Coluna": column_name,
+                        "Função Chave": role_info['role'],
                         "Nº Referências FK": count,
-                        "Tem Descrição?": "✅" if has_description else "❌", # NOVO
-                        "Tem Notas?": "✅" if has_notes else "❌" # NOVO
-                        })
+                        "Tem Descrição?": "✅" if has_description else "❌",
+                        "Tem Notas?": "✅" if has_notes else "❌"
+                    })
+                    processed_columns.add((table_name, column_name))
                 except ValueError:
                     logger.warning(f"Formato inválido na chave fk_reference_counts: {key}")
-            
+
+            # Adiciona outras colunas importantes (PK Comp, PK/FK) que não foram referenciadas
+            for (table_name, column_name), role_info in column_roles.items():
+                if (table_name, column_name) not in processed_columns and role_info['importance_level'] in ['Máxima', 'Alta']:
+                    # Ajuste: Usar technical_schema_data
+                    metadata_info = technical_schema_data.get(table_name, {}).get('columns', [])
+                    col_data = next((col for col in metadata_info if col.get('name') == column_name), None)
+                    
+                    # Correção: Verificar None antes de strip()
+                    col_desc = col_data.get('business_description') if col_data else None
+                    has_description = bool(col_desc.strip()) if col_desc else False
+                    col_notes = col_data.get('value_mapping_notes') if col_data else None
+                    has_notes = bool(col_notes.strip()) if col_notes else False
+                    
+                    fk_list.append({
+                        "Importância": role_info['importance_level'],
+                        "Tabela": table_name,
+                        "Coluna": column_name,
+                        "Função Chave": role_info['role'],
+                        "Nº Referências FK": 0, # Não foi referenciada diretamente
+                        "Tem Descrição?": "✅" if has_description else "❌",
+                        "Tem Notas?": "✅" if has_notes else "❌"
+                    })
+
             if not fk_list:
-                 st.warning("Não foi possível processar as contagens de FK.")
+                 st.warning("Não foi possível processar as colunas para análise.")
             else:
-                # Ordenar pela contagem (descendente)
-                fk_list_sorted = sorted(fk_list, key=lambda x: x["Nº Referências FK"], reverse=True)
-                
-                df_fk_counts = pd.DataFrame(fk_list_sorted)
-                
-                # Opção para mostrar N top colunas
-                num_to_show = st.slider(
-                    "Mostrar Top N colunas mais referenciadas:", 
-                    min_value=5, 
-                    max_value=len(df_fk_counts), 
-                    value=min(20, len(df_fk_counts)), # Padrão 20 ou o total se menor
-                    step=5
+                # Ordenar primariamente por Importância (custom order), depois por Referências
+                importance_order = {'Máxima': 0, 'Alta': 1, 'Média': 2, 'Baixa': 3}
+                fk_list_sorted = sorted(fk_list,
+                                        key=lambda x: (importance_order.get(x["Importância"], 99), -x["Nº Referências FK"]),
+                                        reverse=False) # Ordem crescente de importância (Máxima primeiro)
+
+                df_fk_analysis = pd.DataFrame(fk_list_sorted)
+                cols_ordered_analysis = ["Importância", "Tabela", "Coluna", "Função Chave", "Nº Referências FK", "Tem Descrição?", "Tem Notas?"]
+                df_fk_analysis = df_fk_analysis[[col for col in cols_ordered_analysis if col in df_fk_analysis.columns]]
+
+                num_to_show_analysis = st.slider(
+                    "Mostrar Top N colunas por importância/referência:",
+                    min_value=5,
+                    max_value=len(df_fk_analysis),
+                    value=min(30, len(df_fk_analysis)), # Aumenta o padrão
+                    step=5,
+                    key="slider_analysis_importance"
                 )
-                
-                st.dataframe(df_fk_counts.head(num_to_show), use_container_width=True)
-                
-                # Expander para mostrar todas
-                with st.expander("Mostrar todas as colunas referenciadas"):
-                     st.dataframe(df_fk_counts, use_container_width=True)
-            
+                st.dataframe(df_fk_analysis.head(num_to_show_analysis), use_container_width=True)
+                with st.expander("Mostrar todas as colunas analisadas"):
+                     st.dataframe(df_fk_analysis, use_container_width=True)
+
     else:
         st.error("Dados de contagem de referência de FK ('fk_reference_counts') não encontrados no arquivo de schema técnico.")
         st.info(f"Certifique-se de que o script `scripts/extract_schema.py` ou `scripts/merge_schema_data.py` foi executado e gerou o arquivo `{TECHNICAL_SCHEMA_FILE}` corretamente.")
+
+    st.divider()
+
+    # --- Seção: Tabelas com PK Composta ---
+    st.subheader("Tabelas com Chave Primária Composta")
+    if composite_pk_tables:
+        pk_comp_list = []
+        for table, cols in composite_pk_tables.items():
+            pk_comp_list.append({"Tabela": table, "Colunas PK": ", ".join(cols)})
+        df_pk_comp = pd.DataFrame(pk_comp_list).sort_values(by="Tabela")
+        st.dataframe(df_pk_comp, use_container_width=True)
+    else:
+        st.info("Nenhuma tabela com chave primária composta identificada.")
+
+    st.divider()
+
+    # --- Seção: Tabelas de Junção ---
+    st.subheader("Tabelas de Ligação (Junção)")
+    if junction_tables:
+        junction_list = []
+        for table, details in junction_tables.items():
+             junction_list.append({"Tabela": table, "Detalhes FKs na PK": "; ".join(details)})
+        df_junction = pd.DataFrame(junction_list).sort_values(by="Tabela")
+        st.dataframe(df_junction, use_container_width=True)
+    else:
+        st.info("Nenhuma tabela de junção identificada (PK composta totalmente por FKs).")
+
+    st.divider()
+
+    # --- Seção: Colunas em FK Composta ---
+    st.subheader("Colunas em Chaves Estrangeiras Compostas")
+    if composite_fk_details:
+        fk_comp_list = []
+        for (table, column), detail in composite_fk_details.items():
+             fk_comp_list.append({"Tabela": table, "Coluna": column, "Referência (parte de FK Comp.)": detail})
+        df_fk_comp = pd.DataFrame(fk_comp_list).sort_values(by=["Tabela", "Coluna"])
+        st.dataframe(df_fk_comp, use_container_width=True)
+    else:
+        st.info("Nenhuma coluna identificada como parte de chave estrangeira composta.")
 
 # --- Ações Globais na Sidebar --- 
 st.sidebar.divider()
@@ -1215,6 +1712,13 @@ if st.sidebar.button("Recarregar Metadados do Arquivo", key="reload_metadata_sid
     load_metadata.clear() # Limpa o cache antes de carregar
     st.session_state.metadata = load_metadata(METADATA_FILE)
     if st.session_state.metadata is not None:
+        # NOVO: Atualiza também o estado inicial ao recarregar
+        try:
+            st.session_state.initial_metadata = copy.deepcopy(st.session_state.metadata)
+            logger.info("Estado inicial dos metadados atualizado após recarregar.")
+        except Exception as e:
+            logger.error(f"Erro ao fazer deepcopy dos metadados iniciais após recarregar: {e}")
+            st.session_state.initial_metadata = {} # Define como vazio em caso de erro
         st.success("Metadados recarregados do arquivo!")
         st.rerun()
     else:

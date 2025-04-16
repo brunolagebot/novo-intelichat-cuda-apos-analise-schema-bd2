@@ -1389,199 +1389,199 @@
                     "value_mapping_notes": ""
                 },
                 "LC_CODIGO": {
-                    "description": "Código que representa o local de cobrança",
-                    "value_mapping_notes": ""
+                    "description": "Código numérico ou alfanumérico que identifica de forma única o local de cobrança dentro do sistema do Frigorífico Fazcarne. Cada local de cobrança corresponde a uma forma específica de faturamento, acordo comercial ou centro de recebimento.",
+                    "value_mapping_notes": "Serve como chave primária para a tabela de locais de cobrança e é utilizado para relacionar cobranças com condições comerciais específicas aplicadas ao cliente ou operação. Deve ser interpretado em conjunto com LC_DESCRICAO para garantir clareza em relatórios, contratos e integrações com sistemas financeiros e de contas a receber."
                 },
                 "LC_DESCRICAO": {
-                    "description": "Descriçáo por extenso do local de cobrança",
-                    "value_mapping_notes": ""
+                    "description": "Texto descritivo do local de cobrança, associado ao código LC_CODIGO, utilizado pelo Frigorífico Fazcarne para identificar a forma ou condição de cobrança aplicada ao cliente ou à operação.",
+                    "value_mapping_notes": "Complementa o LC_CODIGO oferecendo uma descrição legível e compreensível para fins operacionais e analíticos. Essencial em relatórios financeiros, emissão de boletos, condições de faturamento e parametrizações de cobrança por tipo de cliente ou canal de venda."
                 },
                 "LC_CIDADE": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código identificador da cidade associada ao local de cobrança. Representa a cidade de referência para cobrança ou emissão do título.",
+                    "value_mapping_notes": "Relaciona-se com o cadastro de cidades. Pode ser utilizado para segmentar cobranças por região, emitir relatórios fiscais ou compor informações de endereço nos boletos."
                 },
                 "LC_ABREVIACAO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Forma reduzida ou código abreviado utilizado para identificar rapidamente o local de cobrança no sistema.",
+                    "value_mapping_notes": "Usada em telas operacionais, filtros e relatórios com espaço limitado. Serve como identificação rápida sem a necessidade da descrição completa."
                 },
                 "LC_BANCO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código do banco vinculado ao local de cobrança. Representa a instituição financeira por onde será realizada a cobrança.",
+                    "value_mapping_notes": "É chave para parametrização da carteira de cobrança e geração dos boletos. Pode ser cruzado com tabelas de cadastro de bancos e exigido para geração de arquivos CNAB"
                 },
                 "LC_AGENCIA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Número da agência bancária vinculada ao local de cobrança.",
+                    "value_mapping_notes": "Fundamental para compor os dados bancários de cobrança. Usado na montagem dos boletos e arquivos de remessa."
                 },
                 "LC_CONTA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Número da conta corrente usada para recebimento dos valores cobrados.",
+                    "value_mapping_notes": "Elemento central para direcionar os pagamentos. Deve estar coerente com banco e agência, e com os dados utilizados nos arquivos de remessa e retorno.\n\n"
                 },
                 "LC_CONVENIO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código de convênio bancário utilizado para emissão dos boletos de cobrança.",
+                    "value_mapping_notes": "Necessário para compor o cabeçalho do boleto e configurar corretamente o padrão do banco emissor. Depende do tipo de carteira e banco envolvidos.\n"
                 },
                 "LC_CARTEIRA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código da carteira de cobrança utilizada junto ao banco para emissão de boletos e títulos.",
+                    "value_mapping_notes": "Fundamental para definir o tipo de cobrança (registrada, sem registro, etc.) e as regras aplicadas pelo banco na liquidação. Costuma ser combinado com o banco e o convênio.\n\n"
                 },
                 "LC_DIRETORIO_REMESSA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Diretório do servidor ou caminho no sistema onde são armazenados os arquivos de remessa bancária gerados a partir dos títulos de cobrança.",
+                    "value_mapping_notes": "Usado na integração entre o sistema interno e o banco via CNAB. Precisa estar corretamente configurado para automação dos envios.\n\n"
                 },
                 "LC_ARQUIVO_REMESSA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Nome padrão ou estrutura de nome dos arquivos de remessa gerados para o banco.",
+                    "value_mapping_notes": "Usado em conjunto com o diretório para localizar, versionar ou substituir arquivos. Importante para conciliação bancária e rastreabilidade.\n\n"
                 },
                 "LC_DIRETORIO_RETORNO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Pasta onde os arquivos de retorno bancário são recebidos e processados após a compensação dos boletos.",
+                    "value_mapping_notes": "Essencial para automatizar a baixa de títulos e verificar a liquidação dos boletos. Deve estar sincronizado com o processo de importação do sistema.\n\n"
                 },
                 "LC_ARQUIVO_RETORNO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Nome do arquivo de retorno esperado ou nomenclatura usada para identificar o retorno do banco referente às cobranças.",
+                    "value_mapping_notes": "Costuma seguir um padrão de nomenclatura definido pela instituição financeira. Precisa estar corretamente configurado para que o sistema reconheça e processe as baixas de forma automática.\n\n"
                 },
                 "LC_REMESSA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Indicador ou configuração que define se o local de cobrança está habilitado para envio de remessa bancária.",
+                    "value_mapping_notes": "Campo utilizado para controle interno do sistema. Pode ser um flag (sim/não) que habilita a geração de arquivos CNAB para este local. Se não estiver ativo, o sistema não deve gerar remessa para este cadastro.\n\n"
                 },
                 "LC_DIAS_CREDITO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Quantidade de dias entre a data de vencimento e a efetiva liberação do crédito na conta do Frigorífico Fazcarne.",
+                    "value_mapping_notes": "Utilizado para controle de fluxo de caixa e previsão de entrada de recursos. Pode variar conforme o banco e o tipo de carteira utilizada.\n\n"
                 },
                 "LC_TIPO_COB_EMPRESA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código da empresa responsável pelo tipo de cobrança configurado neste local.",
+                    "value_mapping_notes": "Usado em integrações ou configurações multiempresa. Relaciona este local de cobrança a um cadastro específico de tipo de cobrança corporativo.\n\n"
                 },
                 "LC_TIPO_COB_FILIAL": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código da filial vinculada ao tipo de cobrança.",
+                    "value_mapping_notes": "Auxilia na segmentação do controle de cobrança por unidade operacional. Essencial para relatórios gerenciais e parametrizações que variam por filial.\n\n"
                 },
                 "LC_TIPO_COBRANCA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código identificador do tipo de cobrança (ex: boletos, débito automático, cartão de crédito).",
+                    "value_mapping_notes": "Parâmetro central para a lógica de cobrança do sistema. Define como a cobrança será processada e por onde o recebimento será operacionalizado.\n\n"
                 },
                 "LC_LISTAR_POSICOES": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Indicador que define se as posições desse local de cobrança devem ser listadas em relatórios ou seleções operacionais.",
+                    "value_mapping_notes": "Comumente utilizado como flag para ocultar ou mostrar determinadas configurações em telas ou filtros do sistema, sem necessidade de exclusão do cadastro.\n\n"
                 },
                 "LC_CARTA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Campo utilizado para armazenar um modelo ou identificador de carta de cobrança associada ao local.",
+                    "value_mapping_notes": "Pode referenciar um modelo de texto padronizado para envio automático de comunicações ao cliente (ex: aviso de cobrança).\n\n"
                 },
                 "LC_BAIXA_PROVISORIA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Indica se este local de cobrança aceita baixa provisória de títulos.",
+                    "value_mapping_notes": "Relevante em operações onde a confirmação do recebimento ocorre posteriormente (ex: via integração bancária ou compensação demorada).\n\n"
                 },
                 "LC_CONTABIL_EMPRESA": {
-                    "description": "Código que representa a empresa responsável pelos dados da linha em contexto.",
-                    "value_mapping_notes": "",
+                    "description": "Código que representa a empresa responsável pelos dados da linha em contexto. Código da empresa que controla a contabilização dos lançamentos referentes ao local de cobrança.",
+                    "value_mapping_notes": "Chave estrangeira para a tabela de plano de contas (TABELA_PLANO.PLANO_EMPRESA). Deve ser usada para vincular lançamentos contábeis por empresa no momento da baixa ou contabilização dos títulos.\n\n",
                     "source_description": "heuristic: chave estrangeira para `TABELA_PLANO.PLANO_EMPRESA`"
                 },
                 "LC_CONTABIL_FILIAL": {
-                    "description": "Código que representa a filial da empresa responsável pelos dados da linha em contexto. É um identificador único da unidade dentro da empresa.",
-                    "value_mapping_notes": "",
+                    "description": "Código que representa a filial da empresa responsável pelos dados da linha em contexto. É um identificador único da unidade dentro da empresa. Código da filial que controla os lançamentos contábeis associados a este local de cobrança.",
+                    "value_mapping_notes": "Chave estrangeira para TABELA_PLANO.PLANO_FILIAL. Permite desmembrar os lançamentos contábeis por unidade operacional.\n\n",
                     "source_description": "heuristic: chave estrangeira para `TABELA_PLANO.PLANO_FILIAL`"
                 },
                 "LC_CONTABIL_EXERCICIO": {
-                    "description": "Coluna que indica o ano de exercício para fins contábeis.",
-                    "value_mapping_notes": "Ano com 4 (quatro) dígitos."
+                    "description": "Coluna que indica o ano de exercício para fins contábeis. Ano do exercício contábil ao qual este local de cobrança está vinculado.",
+                    "value_mapping_notes": "Ano com 4 (quatro) dígitos. Formato numérico com 4 dígitos (ex: 2025). Necessário para validar lançamentos em sistemas contábeis com controle por exercício.\n\n"
                 },
                 "LC_CONTA_CONTABIL": {
-                    "description": "É o código da conta contábil da empresa.",
-                    "value_mapping_notes": "",
+                    "description": "É o código da conta contábil da empresa. Código da conta contábil utilizada para registrar os lançamentos financeiros do local de cobrança.",
+                    "value_mapping_notes": "Chave estrangeira para TABELA_PLANO.PLANO_CODIGO. Deve ser corretamente configurado para garantir o lançamento correto de receitas, tarifas e provisões.\n\n",
                     "source_description": "heuristic: chave estrangeira para `TABELA_PLANO.PLANO_CODIGO`"
                 },
                 "LC_CONTA_CONTABIL_REDUZIDO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Número reduzido da conta contábil, utilizado em integrações ou sistemas que exigem codificação compacta.",
+                    "value_mapping_notes": "Pode ser uma representação simplificada ou abreviada da conta contábil principal, usada em relatórios internos ou sistemas legados.\n\n"
                 },
                 "LC_BOLETO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Flag que indica se o local de cobrança está habilitado para emissão de boleto bancário.",
+                    "value_mapping_notes": "Pode assumir valores binários (ex: 1 = sim, 0 = não). Essencial para controle operacional na geração de títulos com boleto.\n\n"
                 },
                 "LC_CEDENTE": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código ou nome do cedente (emitente do boleto) associado ao local de cobrança.",
+                    "value_mapping_notes": "Precisa estar alinhado com os dados cadastrais informados ao banco, garantindo que o pagamento seja creditado corretamente ao Frigorífico Fazcarne.\n\n"
                 },
                 "LC_TARIFA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Valor ou tipo de tarifa bancária associado às operações de cobrança neste local.",
+                    "value_mapping_notes": "Utilizado para contabilização ou para projeção de custos com cobrança bancária. Pode ser fixo, percentual ou categórico, dependendo da instituição financeira.\n\n"
                 },
                 "LC_TEC_EMPRESA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código da empresa técnica responsável pelas configurações operacionais ou integração do local de cobrança.",
+                    "value_mapping_notes": "Usado para identificar a origem de parametrizações técnicas ou lógicas relacionadas a automações e rotinas específicas. Pode referenciar ambientes de homologação, produção ou instâncias distintas.\n\n"
                 },
                 "LC_TEC_FILIAL": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código da filial técnica associada às configurações ou execução de processos vinculados ao local de cobrança.",
+                    "value_mapping_notes": "Serve para segmentar a execução de tarefas técnicas por filial, como geração de arquivos ou atualizações automatizadas em sistemas distribuídos.\n\n"
                 },
                 "LC_END_FATURAMENTO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Endereço utilizado para emissão de notas fiscais ou envio de documentos fiscais relacionados ao local de cobrança.",
+                    "value_mapping_notes": "Pode ser usado para compor o DANFE ou relatórios fiscais. Fundamental em operações multiendereços ou com regras específicas por unidade.\n\n"
                 },
                 "LC_END_COBRANCA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Endereço utilizado para emissão de notas fiscais ou envio de documentos fiscais relacionados ao local de cobrança. Endereço de cobrança associado ao local. Utilizado para envio de boletos, cartas de cobrança ou notificações.",
+                    "value_mapping_notes": "Normalmente corresponde ao endereço postal ou digital onde o cliente recebe os documentos de cobrança.\n\n"
                 },
                 "LC_END_CORRESPONDENCIA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Endereço utilizado para emissão de notas fiscais ou envio de documentos fiscais relacionados ao local de cobrança.",
+                    "value_mapping_notes": "Pode ser distinto do endereço fiscal ou de cobrança. Útil em casos de gestão descentralizada, representação por terceiros ou clientes com múltiplos pontos de atendimento.\n\n"
                 },
                 "LC_COD_COMUNIC": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código de comunicação ou identificador interno usado em integrações ou automações ligadas ao local de cobrança.",
+                    "value_mapping_notes": "Pode ser usado como parâmetro em sistemas de envio automático de e-mails, geração de documentos ou disparo de mensagens via API.\n\n"
                 },
                 "LC_CARTEIRA_TIPO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Tipo da carteira de cobrança utilizada neste local (ex: registrada, sem registro, garantida).",
+                    "value_mapping_notes": "Determina o comportamento da cobrança junto ao banco e influencia diretamente a geração de boletos e arquivos CNAB.\n\n"
                 },
                 "LC_CNAB": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Padrão do layout CNAB utilizado pelo banco no local de cobrança (ex: CNAB 240, CNAB 400).",
+                    "value_mapping_notes": "Fundamental para garantir a compatibilidade na troca de arquivos entre o sistema e a instituição financeira. Deve estar corretamente configurado conforme exigência do banco.\n\n"
                 },
                 "LC_POSICOES_CONVENIO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Campo técnico que define as posições do código de convênio dentro do layout CNAB.",
+                    "value_mapping_notes": "Essencial para interpretar ou gerar corretamente os dados no layout de remessa. Deve seguir a especificação do banco.\n\n"
                 },
                 "LC_REGISTRADA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Indica se o local de cobrança está configurado para operar exclusivamente com boletos registrados.",
+                    "value_mapping_notes": "Valores binários (ex: 1 = sim, 0 = não). Impacta diretamente nas obrigações de registro bancário dos títulos e na geração de arquivos de remessa conforme exigido pela FEBRABAN.\n\n"
                 },
                 "LC_ATIVO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Flag que determina se o local de cobrança está ativo no sistema e pode ser utilizado em operações.",
+                    "value_mapping_notes": "Utilizado para controle interno. Evita seleção ou uso de configurações obsoletas ou desativadas sem necessidade de exclusão do registro histórico.\n\n"
                 },
                 "LC_TAXA_JUROS": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Percentual de juros aplicável ao título em caso de atraso no pagamento, vinculado a este local de cobrança.",
+                    "value_mapping_notes": "Valor percentual configurado por local. Pode ser usado diretamente na geração de boletos ou no cálculo automatizado de encargos em sistemas de contas a receber.\n\n"
                 },
                 "LC_EMITE_BOLETO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Indica se este local de cobrança está habilitado para emissão automática de boletos bancários.",
+                    "value_mapping_notes": "Flag operacional. Afeta diretamente a geração de documentos financeiros no momento da emissão do título. Comum em integrações com bancos ou ERPs.\n\n"
                 },
                 "LC_CNAB_RETORNO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Padrão do layout de retorno CNAB esperado para processar as baixas dos boletos emitidos por este local.",
+                    "value_mapping_notes": "Deve estar alinhado com a configuração do banco. Pode ser CNAB 240, 400 ou outro específico. Essencial para correta interpretação dos arquivos de retorno e liquidação automática.\n\n"
                 },
                 "LC_OCULTAR_PESQ": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Flag que indica se este local de cobrança deve ser ocultado em pesquisas ou telas de seleção no sistema.",
+                    "value_mapping_notes": "Ajuda a evitar seleção acidental de locais obsoletos ou de uso restrito sem remover o registro da base.\n\n"
                 },
                 "LC_COD_IMPORTACAO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código auxiliar utilizado para identificar este local de cobrança em processos de importação ou integração externa.",
+                    "value_mapping_notes": "Pode estar presente em integrações com sistemas externos, planilhas de carga ou arquivos de terceiros. Facilita a correspondência de dados entre diferentes ambientes.\n\n"
                 },
                 "LC_DESPESA_BANCO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Valor fixo ou percentual da despesa bancária associada à cobrança via este local.",
+                    "value_mapping_notes": "Pode ser usado para provisionamento contábil, precificação de tarifas ou controle de custos operacionais.\n\n"
                 },
                 "LC_VARIACAO_CART": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código de variação de carteira bancária utilizado em bancos que exigem identificação de subtipos de carteira.",
+                    "value_mapping_notes": "Aplicável a bancos que usam múltiplas variações de carteira para definir tipos de cobrança. Afeta diretamente o layout do boleto e remessa.\n\n"
                 },
                 "LC_CONCILIA_EXTR": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Indica se os lançamentos deste local de cobrança são conciliados automaticamente com o extrato bancário.",
+                    "value_mapping_notes": "Essencial para automações de conciliação bancária. Pode habilitar rotinas que cruzam valores, datas e documentos com extratos importados via OFX ou CNAB.\n\n"
                 },
                 "LC_CARTAO_CREDITO": {
                     "description": "",
@@ -6315,15 +6315,15 @@
                     "value_mapping_notes": ""
                 },
                 "CF_TC_EMPRESA": {
-                    "description": "",
+                    "description": "Código da empresa responsável pelo tipo de cobrança configurado neste local.",
                     "value_mapping_notes": ""
                 },
                 "CF_TC_FILIAL": {
-                    "description": "",
+                    "description": "Código da filial vinculada ao tipo de cobrança.",
                     "value_mapping_notes": ""
                 },
                 "CF_TIPO_COBRANCA": {
-                    "description": "",
+                    "description": "Código identificador do tipo de cobrança (ex: boletos, débito automático, cartão de crédito).",
                     "value_mapping_notes": ""
                 },
                 "CF_RESPONSAVEL": {
@@ -9683,24 +9683,24 @@
                     "value_mapping_notes": "Usado como chave primária em tabelas filiais, e chave estrangeira em cadastros de pedidos, viagens, faturamentos, etc."
                 },
                 "NFS_NUMERO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "A coluna NFS_NUMERO representa o número interno sequencial do lançamento da nota fiscal dentro do sistema do Frigorífico Fazcarne. Ela é diferente do número da nota fiscal propriamente dita (NFS_NRO_NF), que aparece no DANFE.\n\nExplicação direta:\nNFS_NRO_NF → número oficial da nota fiscal de saída, o mesmo que consta na NF-e (ex: 4512, 4513…).\n\nNFS_NUMERO → número interno do sistema que identifica cada registro ou lançamento relacionado à emissão. Pode ser um controle técnico, utilizado para evitar duplicidade e servir como chave primária em integrações.\n\nFinalidade prática:\nServe como identificador único interno, muitas vezes usado como chave primária da tabela TABELA_NF_SAIDA.\n\nPode ser referenciado por outras tabelas como ITENS_NF, PAGAMENTOS, FATURAMENTO, etc.\n\nPermite que notas com mesmo número e série (em casos de cancelamento, substituição, etc.) sejam registradas sem conflito no banco.",
+                    "value_mapping_notes": "Serve como chave primária técnica da tabela TABELA_NF_SAIDA. É utilizado para garantir unicidade entre registros, rastrear o histórico de emissão e vincular tabelas auxiliares como itens da nota, pagamentos e controles de expedição.\n"
                 },
                 "NFS_NRO_NF": {
-                    "description": "One possible description in Portuguese Brazil for the column 'NFS_NRO_NF' of type INTEGER that belongs to the object 'VIEW_DASH_VENDAS' (Table) is: \"A coluna que armazena valores numericos definidos pelo sistema e que pertence ao objeto 'VIEW_DASH_VENDAS' (Table).\" \n\nThis translates to \"a column that stores numeric values defined by the system and belongs to the object 'VIEW_DASH_VENDAS' (Table)\".",
-                    "value_mapping_notes": ""
+                    "description": "Número sequencial da Nota Fiscal de Saída emitida pelo Frigorífico Fazcarne. Representa a identificação única de cada nota fiscal dentro do sistema, sendo sempre um valor numérico inteiro.",
+                    "value_mapping_notes": "Esta coluna é usada como chave de referência para identificar transações de venda e cruzar dados com outras tabelas fiscais, como itens da nota, pagamentos e livros fiscais. É obrigatoriamente única dentro do contexto da empresa emissora e segue a sequência lógica do sistema emissor autorizado\n"
                 },
                 "NFS_SERIE": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código numérico que identifica a série da Nota Fiscal de Saída emitida pelo Frigorífico Fazcarne. Utilizado para diferenciar tipos de emissão ou finalidades distintas dentro da mesma numeração de nota. É comumente utilizado para separar séries de emissão normal, contingência, ou operações específicas (ex: exportação, venda balcão, etc.).",
+                    "value_mapping_notes": "A coluna é usada em conjunto com NFS_NRO_NF para garantir a unicidade da nota fiscal no sistema. Pode ser usada como critério de filtragem ou agrupamento em relatórios fiscais e operacionais. A interpretação correta da série é essencial para validação fiscal, apuração de impostos e geração de arquivos legais como SPED."
                 },
                 "NFS_PEDIDO_EMPRESA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código da empresa que realizou o pedido de venda que originou a Nota Fiscal de Saída. No Frigorífico Fazcarne, este campo permite rastrear qual unidade empresarial foi responsável pela solicitação da venda.",
+                    "value_mapping_notes": "Usado para vincular a nota fiscal ao pedido original registrado no sistema comercial. Serve como chave de relacionamento com tabelas de pedidos e facilita análises multiempresa, principalmente em operações que envolvem centralização de faturamento ou transferências internas."
                 },
                 "NFS_PEDIDO_FILIAL": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código da filial da empresa que emitiu o pedido vinculado à Nota Fiscal de Saída. Representa a unidade operacional específica do Frigorífico Fazcarne que originou o pedido de venda.",
+                    "value_mapping_notes": "Crucial para rastreamento logístico e conferência entre pedido, emissão e expedição. Ajuda a identificar a origem física da operação, sendo utilizado em integrações com sistemas de estoque, transporte e centro de custos. Deve ser interpretado em conjunto com NFS_PEDIDO_EMPRESA para compor a identificação completa da unidade responsável."
                 },
                 "NFS_PEDIDO_SERIE_EMPRESA": {
                     "description": "",
@@ -9751,8 +9751,8 @@
                     "value_mapping_notes": ""
                 },
                 "NFS_CLIENTE_EMPRESA": {
-                    "description": "Código que representa a filial da empresa responsável pelos dados da linha em contexto. É um identificador único da unidade dentro da empresa.",
-                    "value_mapping_notes": ""
+                    "description": "Código que representa a filial da empresa responsável pelos dados da linha em contexto. É um identificador único da unidade dentro da empresa. Código da empresa do Frigorífico Fazcarne à qual o cliente da Nota Fiscal de Saída está vinculado. Indica em qual unidade empresarial o cadastro do cliente está registrado no momento da emissão da nota.",
+                    "value_mapping_notes": "Essa coluna é essencial para segmentar e rastrear operações comerciais por empresa dentro de uma estrutura multiempresa. Permite identificar qual CNPJ da organização mantém o relacionamento fiscal e comercial com o cliente em questão. É usada como chave em integrações com cadastros de clientes, faturamento consolidado e relatórios de vendas."
                 },
                 "NFS_CLIENTE_FILIAL": {
                     "description": "É o código da filial da empresa responsável pelos dados.",
@@ -10975,6 +10975,1033 @@
                     "value_mapping_notes": ""
                 }
             }
+        },
+        "TABELA_VEICULO": {
+            "description": "",
+            "COLUMNS": {
+                "VE_EMPRESA": {
+                    "description": "Código que representa a empresa responsável pelos dados da linha em contexto.",
+                    "value_mapping_notes": "\"1 é a nossa empresa, Frigorífico Fazcarne\""
+                },
+                "VE_FILIAL": {
+                    "description": "Código que representa a filial da empresa responsável pelos dados da linha em contexto. É um identificador único da unidade dentro da empresa.",
+                    "value_mapping_notes": "1 é a filial da nossa empresa, Frigorífico Fazcarne"
+                },
+                "VE_CODIGO": {
+                    "description": "Código do veículo detalhado no centro de custo.",
+                    "value_mapping_notes": ""
+                },
+                "VE_DESCRICAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_ME_IDEAL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_ME_MIN": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_ME_MAX": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_ANO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_MODELO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CHASSI": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_ODOMETRO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_COR": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_AC_COMB": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_KHA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_P_MANUTENCAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_PLACA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_TRANS_EMPRESA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_TRANS_FILIAL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_TRANSPORTADOR": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CIDADE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_UF": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_COD_ANT": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CIDADE_CODIGO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_FATURADA_PARA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_NRO_NF": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_DATA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CF_EMPRESA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CF_FILIAL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CF_CODIGO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_FRM_EMPRESA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_FRM_FILIAL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_FRM_MOTORISTA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_PLANO_MANUT_EMPRESA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_PLANO_MANUT_FILIAL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_PLANO_MANUTENCAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_KM_ODOMETRO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_KM_INICIAL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_FORNECEDOR": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_TALAORPA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_FRETISTA_EMP": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_FRETISTA_FIL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_FRETISTA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CONFRE_DESC_EMP": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CONFRE_DESC_FIL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CONFRE_DESCONTO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CONFRE_GR_EMP": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CONFRE_GR_FIL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CONFRE_GRUPO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CONFRE_VALOR": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CONFRE_KM": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_DESATIVAR": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_ACIMA_LIMITE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_FAZENDA_EMP": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_FAZENDA_FIL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_FAZENDA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_TOT_PASSAGEIROS": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_DIARIA_PARADA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CONFRE_TABELA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_ADIC_NOTURNO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_RENAVAM": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_TARA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CAPACIDADE_KG": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CAPACIDADE_M3": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_TIPO_RODADO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_TIPO_CARRCERIA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_TIPO_VEICULO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_PROPRIO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_TONELADA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_VL_TONELADA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_TIPO_CONFRE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_FROTA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_TPEQUIP_CODIGO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_COMBUST_CODIGO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_MARCA_VEI_CODIGO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_MODELO_VEI": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CARACTERISTICA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_NOME_PAL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CTR1": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CTR2": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CTR3": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CUSTO_KM_HR": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_VE_HR_PERCORRIDO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_MEDIA_COMB": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_TAM_TANQUE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_FATOR_FRETE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_KM_ABAST": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_PLACA_CARRETA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_VIRADA_ABAST": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_VIRADA_KM": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_TIPO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_MOD_CHASSI": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_COMPRIMENTO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_LARGURA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_TARA_ATUALIZACAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CATEGORIA_CIOT": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CATEGORIA_ACERTO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_TARA_AUTO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CUSTO_MANUT_KM": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CUSTO_PNEU_KM": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_IDENTIFID": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_CC_EMPRESA": {
+                    "description": "Código que representa a empresa responsável pelos dados da linha em contexto.",
+                    "value_mapping_notes": ""
+                },
+                "VE_CC_FILIAL": {
+                    "description": "Código que representa a filial da empresa responsável pelos dados da linha em contexto. É um identificador único da unidade dentro da empresa.",
+                    "value_mapping_notes": ""
+                },
+                "VE_CC_CODIGO": {
+                    "description": "Código sequencial do centro de custo.",
+                    "value_mapping_notes": ""
+                },
+                "VE_TRANSF_COMBOIO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_LE_EMPRESA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_LE_FILIAL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_LOC_EST_COMBOIO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_INTEGRADO_ATLAS": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_RNTRC": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_TAB_FRETE_EMP": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_TAB_FRETE_FIL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_TAB_FRETE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_IDEXTRATTA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_TIPO_CONTRATO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_QTDE_EIXO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_EXTRATTA_MENSAGEM": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_EXTRATTA_DATA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_EXTRATTA_CARTAO_NUMERO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_PARCELA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_SEGURO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_ADMINISTRATIVO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_SALARIOS": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_PNEUS": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "VE_MANUTENCAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                }
+            }
+        },
+        "CONFRI_CLIENTE_PESO": {
+            "description": "",
+            "COLUMNS": {
+                "CCP_CF_EMPRESA": {
+                    "description": "Código que representa a filial da empresa responsável pelos dados da linha em contexto. É um identificador único da unidade dentro da empresa.",
+                    "value_mapping_notes": ""
+                },
+                "CCP_CF_FILIAL": {
+                    "description": "É o código da filial da empresa responsável pelos dados.",
+                    "value_mapping_notes": ""
+                },
+                "CCP_CF_CODIGO": {
+                    "description": "Código do cliente cadastrado. Por cliente, pode ser cliente ou fornecedor, o campo de cadastro é o mesmo.",
+                    "value_mapping_notes": ""
+                }
+            }
+        },
+        "CONFRI_PEDIDO_COMPRA": {
+            "description": "Contém dados de pedidos de compra de gado no sistema do frigorífico. Aqui estão os destaques das colunas principais:\n\n🧾 Informações Gerais do Pedido\nGPC_ID: Identificador único do registro no sistema (provável chave primária).\n\nGPC_EMPRESA / GPC_FILIAL: Empresa e filial responsáveis pela compra.\n\nGPC_PEDIDO: Número do pedido de compra (sequencial por empresa/filial).\n\nGPC_DATA_PEDIDO: Data em que o pedido foi lançado.\n\nGPC_DATA_EMBARQUE / GPC_DATA_ABATE: Datas programadas de embarque e abate dos animais.\n\nGPC_TIPO_ABATE: Tipo do abate (ex: “P” pode ser “Padrão”?).\n\nGPC_TIPO_PGTO: Tipo de pagamento (ex: “M” – pode indicar Modalidade ou “Mercado”?).\n\n👤 Fornecedor\nGPC_CF_EMPRESA: Código da empresa vinculada ao fornecedor.\n\nDemais colunas com prefixo GPC_TIT_... fazem referência a títulos, notas ou transportadoras relacionadas, mas estão com valores nulos nos exemplos.\n\n📉 Colunas financeiras e de controle (vazias ou nulas no exemplo)\nGPC_CUSTO_FECHADO: Pode indicar se o custo do lote foi fechado.\n\nGPC_TIT_FORNECEDOR_*, GPC_TIT_COD_COM, GPC_TIT_COD_FRETE: Devem estar vinculadas à nota ou título de cobrança da compra, ainda não preenchidas no exemplo.",
+            "COLUMNS": {
+                "GPC_ID": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_EMPRESA": {
+                    "description": "Código que representa a empresa responsável pelos dados da linha em contexto.",
+                    "value_mapping_notes": "1 é a nossa empresa, Frigorífico Fazcarne"
+                },
+                "GPC_FILIAL": {
+                    "description": "Código que representa a filial da empresa responsável pelos dados da linha em contexto. É um identificador único da unidade dentro da empresa.",
+                    "value_mapping_notes": "Código que representa a filial da empresa responsável pelos dados da linha em contexto. É um identificador único da unidade dentro da empresa."
+                },
+                "GPC_PEDIDO": {
+                    "description": "Número do pedido de compra (sequencial por empresa/filial).",
+                    "value_mapping_notes": "Sequencial "
+                },
+                "GPC_DATA_PEDIDO": {
+                    "description": "Data em que o pedido foi lançado/gerado.",
+                    "value_mapping_notes": "Data"
+                },
+                "GPC_DATA_EMBARQUE": {
+                    "description": "Datas programadas de embarque dos animais.",
+                    "value_mapping_notes": "Data"
+                },
+                "GPC_DATA_ABATE": {
+                    "description": "Datas programadas de abate dos animais no momento do pedido.",
+                    "value_mapping_notes": "Data de abate programada."
+                },
+                "GPC_TIPO_ABATE": {
+                    "description": "Tipo do abate. A letra P identifica que é abate próprio (que adquiriu os animais antes do abate), ou T, que significa \"terceiro\", para casos em que há prestação de serviço.   Código que indica o tipo de abate associado ao pedido de compra. Pode assumir os valores 'P' (Próprio) ou 'T' (Terceiro).\",",
+                    "value_mapping_notes": "P = Gado Próprio;\nT = Gado de Terceiros.\n\nQuando o valor é 'P', significa que o abate será feito com animais adquiridos em nome do Frigorífico Fazcarne, configurando compra direta de gado vivo. Já o valor 'T' indica abate para terceiros, geralmente por meio de nota fiscal de remessa para industrialização, onde o frigorífico apenas presta o serviço de abate e industrialização sem adquirir a propriedade dos animais."
+                },
+                "GPC_TIPO_PGTO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_CF_EMPRESA": {
+                    "description": "Código que representa a filial da empresa responsável pelos dados da linha em contexto. É um identificador único da unidade dentro da empresa.",
+                    "value_mapping_notes": ""
+                },
+                "GPC_CF_FILIAL": {
+                    "description": "É o código da filial da empresa responsável pelos dados.",
+                    "value_mapping_notes": ""
+                },
+                "GPC_FORNECEDOR": {
+                    "description": "Código do cliente cadastrado. Por cliente, pode ser cliente ou fornecedor, o campo de cadastro é o mesmo.",
+                    "value_mapping_notes": ""
+                },
+                "GPC_FAZENDA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_COMP_EMPRESA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_COMP_FILIAL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_COMP": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_COMP_COMISSAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_COMP_TP_COMISSAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_COMP_COMISSAO_VALOR": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_INTERM": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_INTERM_COMISSAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_INTERM_TP_COMISSAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_INTERM_COMISSAO_VALOR": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_CF_PROPRIETARIO": {
+                    "description": "Código do cliente cadastrado. Por cliente, pode ser cliente ou fornecedor, o campo de cadastro é o mesmo.",
+                    "value_mapping_notes": ""
+                },
+                "GPC_CURRAL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PAGAMENTO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_OSERVACAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PRECOCE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_RASTREADO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_TP_ALIMENTACAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_VALOR_FRETE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_QTDE_CAMINHAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_QTDE_ANIMAL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_QTDE_ANIMAL_CAMINHAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_DESC_FRETE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_DISTANCIA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_KM_ASFALTO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_KM_TERRA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_VALOR_DESC": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_MOTIVO_DESC": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_VALOR_ACRESC": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_MOTIVO_ACRESC": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PERC_FUNRURAL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_BASE_FUNRURAL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_VALOR_FUNRURAL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_DESC_FUNRURAL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PERC_FUNDESA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_VALOR_FUNDESA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_DESC_FUNDESA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PERC_SENAR": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_VALOR_SENAR": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_DESC_SENAR": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PERC_QUEBRA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PESO_QUEBRA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_VALOR_QUEBRA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_DESC_QUEBRA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PERC_ANIM_TF": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PERC_ANIM_CONSERVA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PERC_ANIM_GRAXARIA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PERC_ANIM_SALGA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PERC_ANIM_COBERTURA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PERC_ANIM_MORTO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_TIPO_CALC_CONTUSAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PERC_CONT_GERAL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PERC_CONT_FRACA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PERC_CONT_MEDIA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PERC_CONT_GRAVE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_TIPO_CALC_MULTILADO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PERC_MULT_GERAL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PERC_MULT_FRACA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PERC_MULT_MEDIA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PERC_MULT_GRAVE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_VALOR_GTA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_DESC_GTA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_COND_PAGTO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_TOTAL_PEDIDO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_TOTAL_BRUTO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_STATUS": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_DATA_CHEGADA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_HORA_CHEGADA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_ALERTADO_EMBARGO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_ALERTADO_EMBARGO_FAZ": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_ACRESCIMO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_DESCONTO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_VALOR_PREMIACAO_ACAB": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_VALOR_PREMIACAO_MAT": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_VALOR_PREMIACAO_CONF": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_VALOR_PREMIACAO_RACA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PERC_BONIFICACAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_PESO_VIVO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_OUTRAS_DESP_FECHAMENTO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_HABILITACAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_NIRF_NCRA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_CERTIFICADORA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_CK_ORT_GTA_SUMARIO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_CK_NOME_GTA_SUMARIO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_CK_90_DIAS_HABIL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_CK_90_BND": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_CK_40_PROPRIEDADE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_CK_DIZERES_GTA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_CK_DIVERG_IDADE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_CK_ANIMAL_S_BRINCO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_BONIFICACAO_HABIL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_TEMPO_VIAGEM": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_JEJUM": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_TAXA_ABATE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_CFB_BANCO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_CFB_AGENCIA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_CFB_CONTA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_LUCRO_ESTIMADO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_CFB_ID_BANCO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_BLOQUEIO_AUTOMATICO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_TIPO_COMPRA_VIVO_SUINO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_FAVORECIDO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_VALOR_PRECOCE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_TIT_EMP": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_TIT_FIL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_TIT_FORNECEDOR_EMP": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_TIT_FORNECEDOR_FIL": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_TIT_COD_COM": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_TIT_FORNECEDOR_COM": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_TIT_SERIE_COM": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_TIT_COD_FRETE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_TIT_FORNECEDOR_FRETE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_TIT_SERIE_FRETE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "GPC_CUSTO_FECHADO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                }
+            }
         }
     },
     "VIEWS": {
@@ -11795,16 +12822,19 @@
                     "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CF_TC_EMPRESA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código da empresa responsável pelo tipo de cobrança configurado neste local.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CF_TC_FILIAL": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código da filial vinculada ao tipo de cobrança.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CF_TIPO_COBRANCA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código identificador do tipo de cobrança (ex: boletos, débito automático, cartão de crédito).",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_CLI_FOR`"
                 },
                 "CF_RESPONSAVEL": {
                     "description": "",
@@ -13372,68 +14402,83 @@
                     "value_mapping_notes": ""
                 },
                 "LC_CIDADE": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código identificador da cidade associada ao local de cobrança. Representa a cidade de referência para cobrança ou emissão do título.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_LOCAL_COBRANCA`"
                 },
                 "LC_ABREVIACAO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Forma reduzida ou código abreviado utilizado para identificar rapidamente o local de cobrança no sistema.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_LOCAL_COBRANCA`"
                 },
                 "LC_BANCO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código do banco vinculado ao local de cobrança. Representa a instituição financeira por onde será realizada a cobrança.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_LOCAL_COBRANCA`"
                 },
                 "LC_AGENCIA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Número da agência bancária vinculada ao local de cobrança.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_LOCAL_COBRANCA`"
                 },
                 "LC_CONTA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Número da conta corrente usada para recebimento dos valores cobrados.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_LOCAL_COBRANCA`"
                 },
                 "LC_CONVENIO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código de convênio bancário utilizado para emissão dos boletos de cobrança.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_LOCAL_COBRANCA`"
                 },
                 "LC_CARTEIRA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código da carteira de cobrança utilizada junto ao banco para emissão de boletos e títulos.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_LOCAL_COBRANCA`"
                 },
                 "LC_DIRETORIO_REMESSA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Diretório do servidor ou caminho no sistema onde são armazenados os arquivos de remessa bancária gerados a partir dos títulos de cobrança.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_LOCAL_COBRANCA`"
                 },
                 "LC_DIRETORIO_RETORNO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Pasta onde os arquivos de retorno bancário são recebidos e processados após a compensação dos boletos.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_LOCAL_COBRANCA`"
                 },
                 "LC_REMESSA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Indicador ou configuração que define se o local de cobrança está habilitado para envio de remessa bancária.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_LOCAL_COBRANCA`"
                 },
                 "LC_DIAS_CREDITO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Quantidade de dias entre a data de vencimento e a efetiva liberação do crédito na conta do Frigorífico Fazcarne.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_LOCAL_COBRANCA`"
                 },
                 "LC_TIPO_COBRANCA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código identificador do tipo de cobrança (ex: boletos, débito automático, cartão de crédito).",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_LOCAL_COBRANCA`"
                 },
                 "TC_DESCRICAO": {
                     "description": "",
                     "value_mapping_notes": ""
                 },
                 "LC_LISTAR_POSICOES": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Indicador que define se as posições desse local de cobrança devem ser listadas em relatórios ou seleções operacionais.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_LOCAL_COBRANCA`"
                 },
                 "LC_CARTA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Campo utilizado para armazenar um modelo ou identificador de carta de cobrança associada ao local.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_LOCAL_COBRANCA`"
                 },
                 "LC_BAIXA_PROVISORIA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Indica se este local de cobrança aceita baixa provisória de títulos.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_LOCAL_COBRANCA`"
                 },
                 "LC_CONTA_CONTABIL": {
                     "description": "É o código da conta contábil da empresa.",
@@ -13445,12 +14490,14 @@
                     "value_mapping_notes": ""
                 },
                 "LC_BOLETO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Flag que indica se o local de cobrança está habilitado para emissão de boleto bancário.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_LOCAL_COBRANCA`"
                 },
                 "LC_ATIVO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Flag que determina se o local de cobrança está ativo no sistema e pode ser utilizado em operações.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_LOCAL_COBRANCA`"
                 }
             }
         },
@@ -13805,16 +14852,18 @@
                     "value_mapping_notes": ""
                 },
                 "NFS_NUMERO": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "A coluna NFS_NUMERO representa o número interno sequencial do lançamento da nota fiscal dentro do sistema do Frigorífico Fazcarne. Ela é diferente do número da nota fiscal propriamente dita (NFS_NRO_NF), que aparece no DANFE.\n\nExplicação direta:\nNFS_NRO_NF → número oficial da nota fiscal de saída, o mesmo que consta na NF-e (ex: 4512, 4513…).\n\nNFS_NUMERO → número interno do sistema que identifica cada registro ou lançamento relacionado à emissão. Pode ser um controle técnico, utilizado para evitar duplicidade e servir como chave primária em integrações.\n\nFinalidade prática:\nServe como identificador único interno, muitas vezes usado como chave primária da tabela TABELA_NF_SAIDA.\n\nPode ser referenciado por outras tabelas como ITENS_NF, PAGAMENTOS, FATURAMENTO, etc.\n\nPermite que notas com mesmo número e série (em casos de cancelamento, substituição, etc.) sejam registradas sem conflito no banco.",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_NF_SAIDA`"
                 },
                 "NFS_PEDIDO_NUMERO": {
                     "description": "",
                     "value_mapping_notes": ""
                 },
                 "NFS_SERIE": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "Código numérico que identifica a série da Nota Fiscal de Saída emitida pelo Frigorífico Fazcarne. Utilizado para diferenciar tipos de emissão ou finalidades distintas dentro da mesma numeração de nota. É comumente utilizado para separar séries de emissão normal, contingência, ou operações específicas (ex: exportação, venda balcão, etc.).",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: nome exato em `TABELA_NF_SAIDA`"
                 },
                 "NFS_VALOR_TOTAL_NOTA": {
                     "description": "",
@@ -13922,6 +14971,91 @@
                 },
                 "VEND_NOME": {
                     "description": "Certainly! Here is a concise Portuguese description for the column in the database called 'VEND_NOME' of type 'VARCHAR(50)' that belongs to the 'VIEW_DASH_VENDAS' table. It would likely mean something like \"a field for storing names, typically 50 characters long, associated with purchases made through the 'VIEW_DASH_VENDAS' table.",
+                    "value_mapping_notes": ""
+                }
+            }
+        },
+        "VIEW_DASH_PESAGEM_PRODUCAO": {
+            "description": "View que exibe todos os produtos produzidos, linha por linha, conforme são pesados. Não inclui carcaças do abate.",
+            "COLUMNS": {
+                "COD_OP": {
+                    "description": "Código da ordem de produção. Sequencial numérico que indica a ordem de produção que engloba os produtos produzidos.",
+                    "value_mapping_notes": "Código da ordem de produção, OP = ordem de produção."
+                },
+                "DATA_OP": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "CDA_PROD": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "PRODUTO_DESCRICAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "PRODUTO_UNIDADE_CV": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "PRODUTO_MARCA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "CPP_COD_ETIQUETA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "CPP_DATA_HORA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "CPP_PRODUCAO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "CPP_VALIDADE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "CPP_QTDE": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "CPP_PESO_BRUTO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "TARA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "CPP_PESO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "MEDIA_PC": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "CPP_DATA_SAIDA": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "CPP_USUARIO_PESAGEM": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "COD_TIPO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "CUSTO": {
+                    "description": "",
+                    "value_mapping_notes": ""
+                },
+                "PRECO_VENDA": {
+                    "description": "",
                     "value_mapping_notes": ""
                 }
             }
