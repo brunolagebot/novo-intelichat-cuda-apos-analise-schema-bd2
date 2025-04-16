@@ -15,11 +15,12 @@ logging.getLogger("requests").setLevel(logging.WARNING)
 # Carrega as variáveis do arquivo .env para o ambiente
 load_dotenv()
 
-# Agora usa /api/chat por padrão
-OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://localhost:11434/api/chat")
+# Agora usa a variável específica para CHAT
+OLLAMA_CHAT_URL_FROM_ENV = os.getenv("OLLAMA_CHAT_URL") # Tenta pegar do .env primeiro
+OLLAMA_CHAT_URL = OLLAMA_CHAT_URL_FROM_ENV if OLLAMA_CHAT_URL_FROM_ENV else "http://localhost:11434/api/chat" # Fallback
 
-# Tenta derivar a URL base da API (removendo /api/chat ou /api/generate)
-OLLAMA_BASE_URL = OLLAMA_API_URL.replace("/api/chat", "").replace("/api/generate", "")
+# Derivar URL base e URL de tags a partir da URL de CHAT
+OLLAMA_BASE_URL = OLLAMA_CHAT_URL.replace("/api/chat", "").replace("/api/generate", "")
 OLLAMA_TAGS_URL = f"{OLLAMA_BASE_URL}/api/tags"
 
 def get_available_models() -> List[str]:
@@ -70,7 +71,8 @@ def chat_completion(messages: List[Dict[str, str]], model: str | None = None, st
         Retorna None em caso de erro.
     """
     target_model = model if model else os.getenv("OLLAMA_DEFAULT_MODEL", "llama3")
-    logging.debug(f"Enviando para {OLLAMA_API_URL} com modelo {target_model} e stream={stream}")
+    # Usa a constante OLLAMA_CHAT_URL definida anteriormente
+    logging.debug(f"Enviando para {OLLAMA_CHAT_URL} com modelo {target_model} e stream={stream}")
     logging.debug(f"Messages: {messages}")
 
     payload = {
@@ -80,7 +82,8 @@ def chat_completion(messages: List[Dict[str, str]], model: str | None = None, st
     }
 
     try:
-        response = requests.post(OLLAMA_API_URL, json=payload, stream=stream) # Habilita stream na request
+        # Usa a constante OLLAMA_CHAT_URL definida anteriormente
+        response = requests.post(OLLAMA_CHAT_URL, json=payload, stream=stream) # Habilita stream na request
         response.raise_for_status()
 
         if stream:
@@ -135,17 +138,17 @@ def chat_completion(messages: List[Dict[str, str]], model: str | None = None, st
             return full_response
 
     except requests.exceptions.ConnectionError as e:
-        logging.error(f"Erro de conexão ao tentar acessar {OLLAMA_API_URL}: {e}")
+        logging.error(f"Erro de conexão ao tentar acessar {OLLAMA_CHAT_URL}: {e}")
         return None
     except requests.exceptions.Timeout as e:
-        logging.error(f"Timeout ao tentar acessar {OLLAMA_API_URL}: {e}")
+        logging.error(f"Timeout ao tentar acessar {OLLAMA_CHAT_URL}: {e}")
         return None
     except requests.exceptions.HTTPError as e:
-        logging.error(f"Erro HTTP {response.status_code} ao acessar {OLLAMA_API_URL}: {e}")
+        logging.error(f"Erro HTTP {response.status_code} ao acessar {OLLAMA_CHAT_URL}: {e}")
         logging.error(f"Resposta recebida: {response.text}")
         return None
     except requests.exceptions.RequestException as e:
-        logging.error(f"Erro inesperado de request para {OLLAMA_API_URL}: {e}")
+        logging.error(f"Erro inesperado de request para {OLLAMA_CHAT_URL}: {e}")
         return None
     except json.JSONDecodeError as e:
         # Isso pode acontecer se stream=False e a resposta não for JSON válido

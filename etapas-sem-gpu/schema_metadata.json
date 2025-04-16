@@ -9657,8 +9657,9 @@
                     "value_mapping_notes": ""
                 },
                 "COD_TIPO_DESOSSA": {
-                    "description": "",
-                    "value_mapping_notes": ""
+                    "description": "'A = ACABADO\\r\\nS = SEMI ACABADO\\r\\nE = SERRACAO'",
+                    "value_mapping_notes": "",
+                    "source_description": "heuristic: database comment"
                 },
                 "COD_SOMENTE_PULMAO": {
                     "description": "",
