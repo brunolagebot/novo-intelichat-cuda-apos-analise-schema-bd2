@@ -13,6 +13,7 @@ import io # NOVO: Para manipulação de bytes em memória (Excel)
 import numpy as np # NOVO: Para manipulação de vetores
 import faiss # NOVO: Para busca por similaridade
 import copy # NOVO: Para deepcopy
+import time # NOVO: Para medir o tempo
 
 # Configuração básica de logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -38,7 +39,8 @@ except Exception as e:
         return None
 
 METADATA_FILE = 'etapas-sem-gpu/schema_metadata.json'
-TECHNICAL_SCHEMA_FILE = 'data/combined_schema_details.json' # NOVO: Carregar dados técnicos combinados
+TECHNICAL_SCHEMA_FILE = 'data/combined_schema_details.json' # Fallback schema without embeddings
+EMBEDDED_SCHEMA_FILE = 'data/schema_with_embeddings.json' # Schema WITH embeddings
 OVERVIEW_COUNTS_FILE = 'data/overview_counts.json' # NOVO: Arquivo para contagens cacheadas
 # NOVO: Definir o nome do arquivo de saída do merge para usar na mensagem
 OUTPUT_COMBINED_FILE = 'data/combined_schema_details.json'
@@ -83,6 +85,7 @@ def get_type_explanation(type_string):
 # --- Funções Auxiliares --- NOVO: load_technical_schema
 @st.cache_data # Cache para estrutura técnica (não muda na sessão)
 def load_technical_schema(file_path):
+    logger.info(f"---> EXECUTANDO load_technical_schema para: {file_path}") # Log de diagnóstico
     """Carrega o schema técnico (combinado) do arquivo JSON."""
     if not os.path.exists(file_path):
         st.error(f"Erro: Arquivo de schema técnico não encontrado em '{file_path}'")
@@ -102,6 +105,7 @@ def load_technical_schema(file_path):
 
 @st.cache_data # Cache para evitar recarregar a cada interação
 def load_metadata(file_path):
+    logger.info(f"---> EXECUTANDO load_metadata para: {file_path}") # Log de diagnóstico
     """Carrega o arquivo JSON de metadados."""
     if not os.path.exists(file_path):
         st.error(f"Erro: Arquivo de metadados não encontrado em '{file_path}'")
@@ -165,18 +169,21 @@ def generate_ai_description(prompt):
         st.error(f"Erro ao contatar a IA: {e}")
         return None
 
-# --- Função find_existing_description (Adaptada de view_schema_app.py) ---
-def find_existing_description(metadata, schema_data, current_object_name, target_col_name):
+# --- Função find_existing_info (Adaptada e Renomeada) ---
+def find_existing_info(metadata, schema_data, current_object_name, target_col_name):
     """
-    Procura por uma descrição existente para uma coluna:
-    1. Busca por nome exato em outras tabelas/views.
-    2. Se for FK, busca a descrição da PK referenciada.
-    3. Se for PK, busca a descrição de uma coluna FK que a referencie.
+    Procura por informações existentes (descrição e notas) para uma coluna:
+    1. Busca por nome exato em outras tabelas/views (para descrição e notas).
+    2. Se for FK, busca a descrição da PK referenciada (apenas descrição).
+    3. Se for PK, busca a descrição de uma coluna FK que a referencie (apenas descrição).
+    4. Verifica comentário do banco de dados (apenas descrição).
+
+    Retorna: (desc_sugerida, fonte_desc, notas_sugeridas, fonte_notas)
     """
     if not metadata or not schema_data or not target_col_name or not current_object_name:
-        return None, None # Retorna None para descrição e para a fonte
+        return None, None, None, None # Retorna None para tudo
 
-    # --- NOVO: 1. Verificar Comentário do Banco de Dados --- 
+    # --- 1. Verificar Comentário do Banco de Dados (APENAS para Descrição) ---
     current_object_info = schema_data.get(current_object_name)
     if current_object_info:
         # Encontra a info técnica da coluna alvo
@@ -198,7 +205,7 @@ def find_existing_description(metadata, schema_data, current_object_name, target
                     manual_desc = metadata.get(obj_type_key, {}).get(current_object_name, {}).get('COLUMNS', {}).get(target_col_name, {}).get('description','').strip()
                     if not manual_desc: # Somente se a descrição manual estiver vazia
                         logger.debug(f"Heurística: Descrição encontrada via comentário do DB para {current_object_name}.{target_col_name}")
-                        return db_comment, "database comment"
+                        return db_comment, "database comment", None, None # MODIFICADO: Retorna None para notas
                     # else: Se manual_desc existe, ignora o comentário do DB e segue para outras heurísticas
     # --- FIM NOVO --- 
 
@@ -207,17 +214,21 @@ def find_existing_description(metadata, schema_data, current_object_name, target
         for obj_name, obj_meta in metadata.get(obj_type_key, {}).items():
             if obj_name == current_object_name: continue
             col_meta = obj_meta.get('COLUMNS', {}).get(target_col_name)
-            if col_meta and col_meta.get('description', '').strip():
-                desc = col_meta['description']
-                source = f"nome exato em `{obj_name}`"
-                logger.debug(f"Heurística: Descrição encontrada por {source} para {current_object_name}.{target_col_name}")
-                return desc, source
+            # MODIFICADO: Verifica descrição E notas
+            if col_meta:
+                found_desc = col_meta.get('description', '').strip()
+                found_notes = col_meta.get('value_mapping_notes', '').strip()
+                if found_desc or found_notes: # Se encontrou algo útil
+                    source = f"nome exato em `{obj_name}`"
+                    logger.debug(f"Heurística: Informação encontrada por {source} para {current_object_name}.{target_col_name}")
+                    # Retorna o que encontrou (descrição e/ou notas)
+                    return found_desc, source, found_notes, source
 
     # Se não achou por nome exato, tenta via FKs (precisa do schema_data técnico)
     current_object_info = schema_data.get(current_object_name)
     if not current_object_info:
         logger.warning(f"Schema técnico não encontrado para {current_object_name} ao buscar heurística FK.")
-        return None, None
+        return None, None, None, None # MODIFICADO
     
     current_constraints = current_object_info.get('constraints', {})
     current_pk_cols = [col for pk in current_constraints.get('primary_key', []) for col in pk.get('columns', [])]
@@ -244,7 +255,7 @@ def find_existing_description(metadata, schema_data, current_object_name, target
                     desc = ref_col_meta['description']
                     source = f"chave estrangeira para `{ref_table}.{ref_col_name}`"
                     logger.debug(f"Heurística: Descrição encontrada por {source} para {current_object_name}.{target_col_name}")
-                    return desc, source
+                    return desc, source, None, None # MODIFICADO: Retorna None para notas
             except (IndexError, ValueError): continue
 
     # 4. Busca Inversa (Se target_col é PK)
@@ -270,10 +281,10 @@ def find_existing_description(metadata, schema_data, current_object_name, target
                                  desc = other_col_meta['description']
                                  source = f"coluna `{referencing_col_name}` em `{other_obj_name}` (ref. esta PK)"
                                  logger.debug(f"Heurística: Descrição encontrada por {source} para {current_object_name}.{target_col_name}")
-                                 return desc, source
+                                 return desc, source, None, None # MODIFICADO: Retorna None para notas
                          except (IndexError, ValueError): continue
 
-    return None, None # Nenhuma descrição encontrada
+    return None, None, None, None # MODIFICADO: Nenhuma informação encontrada
 
 # --- Função get_column_concept (Adaptada de view_schema_app.py) ---
 def get_column_concept(schema_data, obj_name, col_name):
@@ -522,11 +533,14 @@ def fetch_sample_data(db_path, user, password, charset, table_name, num_rows=10)
 
 # --- NOVA Função para Heurística Global ---
 def apply_heuristics_globally(metadata_dict, technical_schema):
-    """Aplica a heurística find_existing_description a todas as colunas vazias."""
+    """Aplica a heurística find_existing_info a todas as colunas vazias."""
     logger.info("Iniciando aplicação global da heurística...")
-    updated_count = 0
-    already_filled_count = 0
-    not_found_count = 0
+    updated_desc_count = 0
+    updated_notes_count = 0
+    already_filled_desc_count = 0
+    already_filled_notes_count = 0
+    not_found_count = 0 # Contador geral para colunas onde nada foi encontrado
+    columns_processed = 0
 
     objects_to_process = {}
     for obj_type_key in ['TABLES', 'VIEWS']:
@@ -548,30 +562,65 @@ def apply_heuristics_globally(metadata_dict, technical_schema):
 
         columns_meta = obj_meta['COLUMNS']
         for col_name, col_meta_target in columns_meta.items(): # Renomeado para clareza
+            columns_processed += 1
             current_desc = col_meta_target.get('description', '').strip()
-            # Só aplica se a descrição atual estiver VAZIA
-            if not current_desc:
-                # Procura descrição existente
-                existing_desc, source = find_existing_description(metadata_dict, technical_schema, obj_name, col_name)
-                if existing_desc:
-                    logger.debug(f"Heurística global: Atualizando '{obj_name}.{col_name}' com base em '{source}'")
-                    col_meta_target['description'] = existing_desc
-                    col_meta_target['source_description'] = f"heuristic: {source}" # Adiciona marcador
-                    updated_count += 1
-                else:
+            current_notes = col_meta_target.get('value_mapping_notes', '').strip()
+            found_something_new = False
+
+            # Só busca se algo estiver faltando (descrição OU notas)
+            if not current_desc or not current_notes:
+                # Procura informação existente (descrição E/OU notas)
+                suggested_desc, desc_source, suggested_notes, notes_source = find_existing_info(
+                    metadata_dict, technical_schema, obj_name, col_name
+                )
+
+                # Aplica descrição se vazia e sugestão encontrada
+                if not current_desc and suggested_desc:
+                    logger.debug(f"Heurística global (Descrição): Atualizando '{obj_name}.{col_name}' com base em '{desc_source}'")
+                    col_meta_target['description'] = suggested_desc
+                    col_meta_target['source_description'] = f"heuristic: {desc_source}" # Adiciona marcador
+                    updated_desc_count += 1
+                    found_something_new = True
+                elif current_desc:
+                    already_filled_desc_count += 1
+
+                # Aplica notas se vazias e sugestão encontrada
+                if not current_notes and suggested_notes:
+                    logger.debug(f"Heurística global (Notas): Atualizando '{obj_name}.{col_name}' com base em '{notes_source}'")
+                    col_meta_target['value_mapping_notes'] = suggested_notes
+                    col_meta_target['source_notes'] = f"heuristic: {notes_source}" # Adiciona marcador
+                    updated_notes_count += 1
+                    found_something_new = True
+                elif current_notes:
+                    already_filled_notes_count += 1
+
+                # Se não encontrou nada novo para esta coluna
+                if not found_something_new and (not current_desc or not current_notes):
                     not_found_count += 1
             else:
-                 already_filled_count += 1
+                # Ambos já estavam preenchidos
+                already_filled_desc_count += 1
+                already_filled_notes_count += 1
 
-    logger.info(f"Aplicação global da heurística concluída. Atualizadas: {updated_count}, Preenchidas: {already_filled_count}, Não encontradas: {not_found_count}")
+    # Ajusta contagem de "já preenchidos" para não contar duas vezes a mesma coluna
+    # total_columns = columns_processed # Ou calcular total de colunas de outra forma
+    # already_filled_count = min(already_filled_desc_count, already_filled_notes_count) # Aproximação
+
+    logger.info(f"Aplicação global da heurística concluída.")
+    logger.info(f"  Descrições: {updated_desc_count} atualizadas, {already_filled_desc_count} já preenchidas.")
+    logger.info(f"  Notas: {updated_notes_count} atualizadas, {already_filled_notes_count} já preenchidas.")
+    logger.info(f"  Colunas onde nenhuma sugestão foi encontrada (para campos vazios): {not_found_count}")
+
     # progress_bar.progress(1.0, text="Heurística Concluída!")
-    return updated_count, already_filled_count, not_found_count
+    # Retorna contagens separadas para melhor feedback
+    return updated_desc_count, updated_notes_count
 # --- FIM NOVA Função ---
 
 # --- NOVO: Funções FAISS ---
 
 @st.cache_resource # Cache do índice FAISS para performance
 def build_faiss_index(schema_data):
+    logger.info("---> EXECUTANDO build_faiss_index") # Log de diagnóstico
     """Constrói um índice FAISS a partir dos embeddings das colunas no schema_data."""
     embeddings = []
     index_to_key = [] # Mapeia o índice interno do FAISS para (table_name, col_index)
@@ -712,6 +761,7 @@ def compare_metadata_changes(initial_meta, current_meta):
 
 @st.cache_data # Cacheia a análise estrutural, pois só depende do schema técnico
 def analyze_key_structure(schema_data):
+    logger.info("---> EXECUTANDO analyze_key_structure") # Log de diagnóstico
     """Analisa o schema_data para identificar tipos de chaves e calcular importância inicial."""
     logger.info("Analisando estrutura de chaves do schema...")
     composite_pk_tables = {}
@@ -851,83 +901,198 @@ def analyze_key_structure(schema_data):
 
 
 # --- Função Principal / Carregamento de Dados ---
-def load_and_process_data():
-    technical_schema = load_technical_schema(TECHNICAL_SCHEMA_FILE) # Carrega dados técnicos combinados
-    if technical_schema is None:
-        st.stop()
+# --- FIM: Obter info de PK/FK ---
+# --- NOVO: Função para lidar com a mudança do Toggle de Embeddings ---
+def handle_embedding_toggle():
+    """Callback para o toggle 'Usar Embeddings'. Carrega/descarrega o schema com embeddings."""
+    use_embeddings = st.session_state.get('use_embeddings', False)
+    logger.info(f"Toggle 'Usar Embeddings' mudou para: {use_embeddings}")
+    st.spinner_text = "Atualizando schema e estruturas..." # Define texto para spinner
+    with st.spinner(st.spinner_text): # Usar st.spinner para feedback
+        if use_embeddings:
+            # Tentar carregar schema com embeddings
+            logger.info(f"Tentando carregar schema com embeddings de: {EMBEDDED_SCHEMA_FILE}")
+            schema_embedded = load_technical_schema(EMBEDDED_SCHEMA_FILE)
+            if schema_embedded:
+                st.session_state.technical_schema = schema_embedded
+                logger.info("Schema com embeddings carregado.")
+                # Limpar caches e reconstruir estruturas com embeddings
+                build_faiss_index.clear()
+                analyze_key_structure.clear()
+                logger.info("Caches FAISS e Análise de Chaves limpos.")
+                st.session_state.faiss_index, st.session_state.index_to_key_map = build_faiss_index(st.session_state.technical_schema)
+                st.session_state.key_analysis = analyze_key_structure(st.session_state.technical_schema)
+                logger.info("Índice FAISS e Análise de Chaves reconstruídos com embeddings.")
+                st.toast("Schema com embeddings carregado e estruturas atualizadas.", icon="✅")
+            else:
+                logger.error(f"Falha ao carregar schema com embeddings de {EMBEDDED_SCHEMA_FILE}.")
+                st.error(f"Erro ao carregar {EMBEDDED_SCHEMA_FILE}. Verifique o arquivo e os logs. Revertendo para schema base.", icon="❌")
+                st.session_state.use_embeddings = False # Desliga o toggle se falhar
+                # Recarrega o schema base (garante consistência)
+                st.session_state.technical_schema = load_technical_schema(TECHNICAL_SCHEMA_FILE)
+                build_faiss_index.clear()
+                analyze_key_structure.clear()
+                st.session_state.faiss_index, st.session_state.index_to_key_map = build_faiss_index(st.session_state.technical_schema)
+                st.session_state.key_analysis = analyze_key_structure(st.session_state.technical_schema)
 
+        else:
+            # Voltar para o schema base
+            logger.info(f"Carregando schema base de: {TECHNICAL_SCHEMA_FILE}")
+            schema_base = load_technical_schema(TECHNICAL_SCHEMA_FILE)
+            if schema_base:
+                 st.session_state.technical_schema = schema_base
+                 logger.info("Schema base carregado.")
+                 # Limpar caches e reconstruir estruturas com schema base
+                 build_faiss_index.clear()
+                 analyze_key_structure.clear()
+                 logger.info("Caches FAISS e Análise de Chaves limpos.")
+                 st.session_state.faiss_index, st.session_state.index_to_key_map = build_faiss_index(st.session_state.technical_schema)
+                 st.session_state.key_analysis = analyze_key_structure(st.session_state.technical_schema)
+                 logger.info("Índice FAISS e Análise de Chaves reconstruídos com schema base.")
+                 st.toast("Usando schema base. Busca por similaridade desativada/limitada.", icon="ℹ️")
+            else:
+                 # Isso não deveria acontecer se o carregamento inicial funcionou, mas por segurança:
+                 logger.critical("Falha crítica ao recarregar o schema base! O app pode ficar instável.")
+                 st.error("Erro GRAVE ao recarregar o schema base. Verifique os logs.", icon="🚨")
+                 # O que fazer aqui? Talvez parar o app? Por ora, apenas log/erro.
+
+
+# --- Função Principal / Carregamento de Dados ---
+def load_and_process_data():
+    # --- NOVO: Configuração da Barra de Progresso e Tempos ---
+    total_steps = 6
+    progress_bar = st.progress(0.0, text="Iniciando carregamento...")
+    start_time_total = time.time()
+    step_times = {}
+    current_step = 0
+
+    def update_progress(step_name, step_start_time):
+        nonlocal current_step
+        duration = time.time() - step_start_time
+        step_times[step_name] = duration
+        current_step += 1
+        progress_value = float(current_step) / total_steps
+        progress_bar.progress(progress_value, text=f"({current_step}/{total_steps}) {step_name} concluída em {duration:.2f}s...")
+        logger.info(f"Etapa '{step_name}' concluída em {duration:.2f}s")
+
+    # --- Etapa 1: Carregar Schema Base --- *MODIFICADO*
+    step_name = "Carregando Schema Base"
+    start_time_step = time.time()
+    progress_bar.progress(float(current_step)/total_steps, text=f"({current_step+1}/{total_steps}) Executando: {step_name}...")
+    # Carrega SEMPRE o schema técnico base primeiro
+    schema_base = load_technical_schema(TECHNICAL_SCHEMA_FILE)
+    if schema_base is None:
+        st.error(f"Falha crítica: Não foi possível carregar o arquivo de schema técnico base obrigatório em '{TECHNICAL_SCHEMA_FILE}'.")
+        st.stop()
+    # update_progress(step_name, start_time_step) # REMOVIDO - Movido para depois de atribuir ao estado
+
+    # --- Etapa 2: Carregar Metadados ---
+    step_name = "Carregando Metadados"
+    start_time_step = time.time()
+    progress_bar.progress(float(current_step)/total_steps, text=f"({current_step+1}/{total_steps}) Executando: {step_name}...")
     metadata_dict = load_metadata(METADATA_FILE)
     if metadata_dict is None:
-        # Tenta criar um vazio se não existir
         metadata_dict = {"TABLES": {}, "VIEWS": {}}
+    update_progress(step_name, start_time_step)
 
-    overview_counts = load_overview_counts(OVERVIEW_COUNTS_FILE) # Carrega contagens
+    # --- Etapa 3: Carregar Contagens da Visão Geral ---
+    step_name = "Carregando Contagens (Cache)"
+    start_time_step = time.time()
+    progress_bar.progress(float(current_step)/total_steps, text=f"({current_step+1}/{total_steps}) Executando: {step_name}...")
+    overview_counts = load_overview_counts(OVERVIEW_COUNTS_FILE)
+    update_progress(step_name, start_time_step)
 
-    # NOVO: Armazena estado inicial dos metadados se ainda não existir
+    # --- Etapa 4: Construir Índice FAISS (Base) --- *MODIFICADO*
+    step_name = "Construindo Índice FAISS (Base)"
+    start_time_step = time.time()
+    progress_bar.progress(float(current_step)/total_steps, text=f"({current_step+1}/{total_steps}) Executando: {step_name}...")
+    # Constrói índice inicial com schema base (pode não ter embeddings)
+    faiss_index, index_to_key_map = build_faiss_index(schema_base)
+    update_progress(step_name, start_time_step)
+
+    # --- Etapa 5: Analisar Estrutura de Chaves (Base) --- *MODIFICADO*
+    step_name = "Analisando Estrutura de Chaves (Base)"
+    start_time_step = time.time()
+    progress_bar.progress(float(current_step)/total_steps, text=f"({current_step+1}/{total_steps}) Executando: {step_name}...")
+    # Passa o schema base para análise inicial
+    key_analysis_result = analyze_key_structure(schema_base)
+    update_progress(step_name, start_time_step)
+
+
+    # --- Etapa 6: Inicializar Estado da Sessão ---
+    step_name = "Inicializando Estado da Sessão"
+    start_time_step = time.time()
+    progress_bar.progress(float(current_step)/total_steps, text=f"({current_step+1}/{total_steps}) Executando: {step_name}...")
+
+    # --- NOVO: Inicializa estado do toggle de embeddings ---
+    if 'use_embeddings' not in st.session_state:
+        st.session_state.use_embeddings = False # Começa desligado
+
+    # Armazenar estado inicial dos metadados (DENTRO da etapa de inicialização)
     if 'initial_metadata' not in st.session_state:
         logger.info("Armazenando estado inicial dos metadados.")
         try:
             st.session_state.initial_metadata = copy.deepcopy(metadata_dict)
         except Exception as e:
             logger.error(f"Erro ao fazer deepcopy dos metadados iniciais: {e}")
-            st.session_state.initial_metadata = {} # Define como vazio em caso de erro
+            st.session_state.initial_metadata = {}
 
-    # NOVO: Construir índice FAISS
-    # Opcional: Tentar carregar índice pré-construído
-    # faiss_index = None
-    # index_to_key_map = []
-    # if os.path.exists(FAISS_INDEX_FILE):
-    #     try:
-    #         faiss_index = faiss.read_index(FAISS_INDEX_FILE)
-    #         # Precisaria carregar o index_to_key_map também de algum lugar
-    #         logger.info(f"Índice FAISS carregado de {FAISS_INDEX_FILE}")
-    #         # Verificar se o mapeamento está sincronizado ou reconstruir
-    #     except Exception as e:
-    #         logger.error(f"Erro ao carregar índice FAISS de {FAISS_INDEX_FILE}: {e}")
-    #         faiss_index = None # Força a reconstrução
-
-    # if faiss_index is None: # Se não carregou ou não existe, constrói
-    faiss_index, index_to_key_map = build_faiss_index(technical_schema)
-
-    # Inicializa/Atualiza st.session_state
+    # --- Inicializa/Atualiza st.session_state ---
+    # Armazena metadados editáveis
     if 'metadata' not in st.session_state:
         st.session_state.metadata = metadata_dict
+    # Armazena o schema carregado INICIALMENTE (o base)
     if 'technical_schema' not in st.session_state:
-        st.session_state.technical_schema = technical_schema # Armazena schema técnico também
+        st.session_state.technical_schema = schema_base # MODIFICADO: Usa o schema base carregado
+    # Armazena contagens
     if 'overview_counts' not in st.session_state:
-        st.session_state.overview_counts = overview_counts if overview_counts else {} # Armazena contagens
+        st.session_state.overview_counts = overview_counts if overview_counts else {}
+    # Estados da UI
     if 'unsaved_changes' not in st.session_state:
         st.session_state.unsaved_changes = False
     if 'current_view' not in st.session_state:
-        st.session_state.current_view = 'overview' # 'overview', 'table_view', 'column_view'
+        st.session_state.current_view = 'overview'
     if 'selected_object' not in st.session_state:
         st.session_state.selected_object = None
     if 'selected_column_index' not in st.session_state:
         st.session_state.selected_column_index = None
-    if 'selected_object_type' not in st.session_state: # NOVO: table ou view
+    if 'selected_object_type' not in st.session_state:
         st.session_state.selected_object_type = None
-    if 'ollama_enabled' not in st.session_state: # NOVO: Toggle Ollama
-        st.session_state.ollama_enabled = False # Default para False
+    # Estados de configuração
+    if 'ollama_enabled' not in st.session_state:
+        st.session_state.ollama_enabled = False
     if 'db_path' not in st.session_state:
         st.session_state.db_path = DEFAULT_DB_PATH
     if 'db_user' not in st.session_state:
         st.session_state.db_user = DEFAULT_DB_USER
     if 'db_password' not in st.session_state:
-        st.session_state.db_password = os.getenv("FIREBIRD_PASSWORD", "") # Tenta pegar do .env
+        st.session_state.db_password = os.getenv("FIREBIRD_PASSWORD", "")
     if 'db_charset' not in st.session_state:
         st.session_state.db_charset = DEFAULT_DB_CHARSET
-    # NOVO: Inicializa estado para timestamp sob demanda
+    # Estado do timestamp DB
     if 'latest_db_timestamp' not in st.session_state:
-        st.session_state.latest_db_timestamp = None # Inicializa como None
-    # NOVO: Armazenar índice FAISS e mapeamento no estado da sessão
+        st.session_state.latest_db_timestamp = None
+    # Armazenar índice FAISS e mapeamento (inicial, baseado no schema base)
     if 'faiss_index' not in st.session_state:
          st.session_state.faiss_index = faiss_index
     if 'index_to_key_map' not in st.session_state:
          st.session_state.index_to_key_map = index_to_key_map
-    # NOVO: Armazena resultados da análise estrutural
+    # Armazenar resultados da análise estrutural (inicial, baseado no schema base)
     if 'key_analysis' not in st.session_state:
-        st.session_state.key_analysis = analyze_key_structure(technical_schema)
+        st.session_state.key_analysis = key_analysis_result # USA o resultado calculado
 
+    update_progress(step_name, start_time_step) # Marca o fim da inicialização
+
+    # --- Finalização ---
+    total_time = time.time() - start_time_total
+    progress_bar.empty() # Limpa a barra de progresso
+    st.toast(f"Carregamento inicial concluído em {total_time:.2f}s!", icon="🎉")
+    logger.info(f"Carregamento inicial concluído em {total_time:.2f}s.")
+    # Exibe tempos individuais (opcional, pode ser comentado se ficar muito verboso)
+    with st.expander("Detalhes do Tempo de Carregamento Inicial", expanded=False):
+        for name, duration in step_times.items():
+            st.write(f"- {name}: {duration:.3f}s")
+        st.write(f"**- Tempo Total:** {total_time:.3f}s")
 
 # --- Interface Streamlit ---
 st.set_page_config(layout="wide", page_title="Editor de Metadados de Schema")
@@ -1281,6 +1446,37 @@ elif app_mode == "Editar Metadados":
                             st.markdown(f"**Tipo:** `{col_type}` {type_explanation} | **Anulável:** {'Sim' if col_nullable else 'Não'}{key_info_str}")
                             st.markdown("--- Descrição --- ")
 
+                            # --- Garantir Inicialização das Variáveis de Heurística --- # (CORREÇÃO)
+                            current_col_desc_saved = col_meta_data.get('description', '').strip()
+                            description_value_to_display = current_col_desc_saved
+                            current_col_notes_saved = col_meta_data.get('value_mapping_notes', '').strip()
+                            notes_value_to_display = current_col_notes_saved
+                            heuristic_desc_source = None
+                            heuristic_notes_source = None
+                            # --- Fim Inicialização ---
+
+                            # Só busca heurística se um dos campos estiver vazio
+                            if not current_col_desc_saved or not current_col_notes_saved:
+                                suggested_desc, desc_source_from_func, suggested_notes, notes_source_from_func = find_existing_info(
+                                    metadata_dict, technical_schema_data, selected_object, col_name
+                                )
+
+                                # Preenche descrição se vazia e sugestão encontrada
+                                if not current_col_desc_saved and suggested_desc:
+                                    description_value_to_display = suggested_desc
+                                    heuristic_desc_source = desc_source_from_func # Usa variável renomeada
+                                    logger.info(f"Preenchendo DESC '{selected_object}.{col_name}' com sugestão via {desc_source_from_func}")
+
+                                # Preenche notas se vazias e sugestão encontrada
+                                if not current_col_notes_saved and suggested_notes:
+                                    notes_value_to_display = suggested_notes
+                                    heuristic_notes_source = notes_source_from_func # Usa variável renomeada
+                                    logger.info(f"Preenchendo NOTES '{selected_object}.{col_name}' com sugestão via {notes_source_from_func}")
+
+                            # Exibe caption para descrição sugerida
+                            if heuristic_desc_source:
+                                st.caption(f"ℹ️ Sugestão de DESCRIÇÃO preenchida ({heuristic_desc_source}). Edite abaixo.")
+
                             # Heurística e Área de Texto (Código existente, adaptado para usar estado da sessão)
 
                             # Heurística, Desc Area, Botões IA/Propagar
@@ -1291,7 +1487,7 @@ elif app_mode == "Editar Metadados":
                             heuristic_source = None
 
                             if not current_col_desc_saved:
-                                existing_desc, source = find_existing_description(metadata_dict, technical_schema_data, selected_object, col_name)
+                                existing_desc, source, notes, notes_source = find_existing_info(metadata_dict, technical_schema_data, selected_object, col_name)
                                 if existing_desc:
                                     description_value_to_display = existing_desc
                                     heuristic_source = source
@@ -1354,10 +1550,12 @@ elif app_mode == "Editar Metadados":
                                 # Atualiza estado SE diferente do que foi carregado/sugerido inicialmente
                                 if current_value != description_value_to_display:
                                     col_meta_data["description"] = current_value
+                                    col_meta_data.pop('source_description', None) # Remove marcador se editado manualmente
                                 elif heuristic_source and not current_col_desc_saved: # Se heuristica foi usada e campo estava vazio, salva heuristica
                                     col_meta_data["description"] = description_value_to_display
-                                else:
-                                    col_meta_data["description"] = current_col_desc_saved # Garante que o valor salvo seja mantido se não editado
+                                    col_meta_data['source_description'] = f"heuristic: {heuristic_source}" # Adiciona marcador
+                                # else: # Garante que o valor salvo seja mantido se não editado - JÁ FEITO pela inicialização
+                                #    col_meta_data["description"] = current_col_desc_saved
 
                             with btns_col_area:
                                 if st.button("Sugerir IA", key=f"btn_ai_col_{col_name}", use_container_width=True, disabled=not OLLAMA_AVAILABLE or not st.session_state.get('ollama_enabled', True)):
@@ -1399,8 +1597,12 @@ elif app_mode == "Editar Metadados":
 
                             # Notas de Mapeamento
                             st.markdown("--- Notas de Mapeamento --- ")
+                            # Exibe caption para notas sugeridas (ANTES da área de texto)
+                            if heuristic_notes_source:
+                                st.caption(f"ℹ️ Sugestão de NOTAS preenchida ({heuristic_notes_source}). Edite abaixo.")
+
                             col_notes_key = f"notes_{selected_object_technical_type}_{selected_object}_{col_name}"
-                            new_col_notes = st.text_area(
+                            current_notes_value = st.text_area(
                                 f"Notas Mapeamento (`{col_name}`)",
                                 value=col_meta_data.get("value_mapping_notes", ""),
                                 key=col_notes_key,
@@ -1408,7 +1610,16 @@ elif app_mode == "Editar Metadados":
                                 label_visibility="collapsed", # Esconde label repetido
                                 help="Explique valores específicos (ex: 1=Ativo) ou formatos."
                             )
-                            col_meta_data["value_mapping_notes"] = new_col_notes
+                            # Atualiza estado SE diferente do que foi carregado/sugerido inicialmente
+                            if current_notes_value != notes_value_to_display:
+                                col_meta_data["value_mapping_notes"] = current_notes_value
+                                col_meta_data.pop('source_notes', None) # Remove marcador se editado manualmente
+                            elif heuristic_notes_source and not current_col_notes_saved: # CORRIGIDO: Usa heuristic_notes_source e current_col_notes_saved
+                                col_meta_data["value_mapping_notes"] = notes_value_to_display # CORRIGIDO: Usa notes_value_to_display
+                                col_meta_data['source_notes'] = f"heuristic: {heuristic_notes_source}" # CORRIGIDO: Usa heuristic_notes_source
+                            # else: # Garante que o valor salvo seja mantido se não editado - JÁ FEITO pela inicialização
+                            #     col_meta_data["value_mapping_notes"] = current_col_notes_saved
+
                             # --- FIM: Código de Text Area para Descrição e Notas (Re-inserido) ---
 
             st.divider() # Separador antes da pré-visualização
@@ -1733,9 +1944,13 @@ st.sidebar.subheader("Processamento de Dados")
 # --- Botão para Heurística Global ---
 if st.sidebar.button("Aplicar Heurística Globalmente", key="apply_heuristics_button", help="Tenta preencher descrições de colunas vazias usando nomes/relações existentes."):
     with st.spinner("Aplicando heurística em todas as colunas vazias..."):
-        updated, already_filled, not_found = apply_heuristics_globally(st.session_state.metadata, technical_schema_data)
+        upd_desc, upd_notes = apply_heuristics_globally(st.session_state.metadata, technical_schema_data)
         st.sidebar.success(f"Heurística Concluída!", icon="✅")
-        st.sidebar.info(f"- {updated} descrições preenchidas.\n- {already_filled} já tinham descrição.\n- {not_found} sem sugestão encontrada.")
+        # st.sidebar.info(f"- {updated} descrições preenchidas.
+        #                - {already_filled} já tinham descrição.
+        #                - {not_found} sem sugestão encontrada.")
+        # NOVO: Feedback mais detalhado (CORRIGIDO)
+        st.sidebar.info(f"- Descrições preenchidas: {upd_desc}\n- Notas preenchidas: {upd_notes}")
         st.sidebar.warning("As alterações estão em memória. Salve os metadados para persistir.")
 # --- FIM Botão Heurística ---
 
