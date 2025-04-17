@@ -2,6 +2,7 @@ import json
 import os
 import logging
 from copy import deepcopy
+import datetime # NOVO: Para timestamp
 
 # Configuração básica de logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -38,64 +39,103 @@ def find_metadata_entry(metadata, object_name):
     return None
 
 def merge_schema_data(technical_data, metadata):
-    """Mescla dados técnicos com metadados (descrições, notas)."""
+    """Mescla dados técnicos com metadados e realiza validação/contagem."""
     if not technical_data or not metadata:
         logger.error("Dados técnicos ou de metadados não carregados. Abortando a mesclagem.")
-        return None
+        # Retorna informações de validação e contagem vazias/erro
+        return None, 0, 0, 'Error', [], {}
 
-    combined_schema = deepcopy(technical_data) # Começa com cópia profunda dos dados técnicos
-    objects_without_metadata = []
-    columns_without_metadata = []
+    combined_schema = deepcopy(technical_data)
+    total_column_count = 0
+    manual_metadata_column_count = 0 # NOVO contador
+    missing_objects = []
+    missing_columns = {}
+    is_complete = True
 
-    logger.info("Iniciando a mesclagem dos dados do schema...")
+    logger.info("Iniciando a mesclagem, contagem e validação dos dados do schema...")
 
+    # --- Etapa 1: Mesclar metadados e contar colunas com metadados manuais --- #
     for object_name, tech_details in combined_schema.items():
+        if object_name == 'fk_reference_counts': continue
+        if not isinstance(tech_details, dict):
+            logger.warning(f"Item inesperado no nível raiz do schema técnico: '{object_name}' (tipo: {type(tech_details)}). Pulando.")
+            continue
+            
         meta_entry = find_metadata_entry(metadata, object_name)
-
-        if not meta_entry:
-            logger.warning(f"Metadados não encontrados para o objeto: {object_name}")
-            objects_without_metadata.append(object_name)
-            # Garante que os campos existam mesmo vazios (opcional, mas bom para consistência)
-            tech_details["business_description"] = None 
-            for col in tech_details.get("columns", []):
-                 col["business_description"] = None
-                 col["value_mapping_notes"] = None
-            continue # Pula para o próximo objeto
-
-        # Adiciona descrição do objeto (tabela/view)
-        tech_details["business_description"] = meta_entry.get("description", None)
+        tech_details["business_description"] = meta_entry.get("description", None) if meta_entry else None
+        columns_in_object = tech_details.get("columns", [])
+        meta_columns = meta_entry.get("COLUMNS", {}) if meta_entry else {}
         
-        # Itera sobre as colunas técnicas para adicionar metadados das colunas
-        meta_columns = meta_entry.get("COLUMNS", {}) # Note a chave 'COLUMNS' no metadata.json
-        for tech_col in tech_details.get("columns", []):
-            col_name = tech_col["name"] # Nome da coluna técnica
+        for tech_col in columns_in_object:
+            total_column_count += 1
+            col_name = tech_col.get("name")
+            if not col_name: continue
+            
             meta_col_entry = meta_columns.get(col_name)
+            
+            # Mescla descrição e notas
+            business_desc = meta_col_entry.get("description", None) if meta_col_entry else None
+            mapping_notes = meta_col_entry.get("value_mapping_notes", None) if meta_col_entry else None
+            tech_col["business_description"] = business_desc
+            tech_col["value_mapping_notes"] = mapping_notes
+            
+            # Verifica se tem metadado manual (descrição OU nota)
+            has_manual_desc = bool((business_desc or "").strip())
+            has_manual_notes = bool((mapping_notes or "").strip())
+            if has_manual_desc or has_manual_notes:
+                manual_metadata_column_count += 1
 
-            if not meta_col_entry:
-                logger.warning(f"Metadados não encontrados para a coluna: {object_name}.{col_name}")
-                columns_without_metadata.append(f"{object_name}.{col_name}")
-                # Garante que os campos existam mesmo vazios
-                tech_col["business_description"] = None
-                tech_col["value_mapping_notes"] = None
-            else:
-                # Adiciona descrição e notas da coluna
-                tech_col["business_description"] = meta_col_entry.get("description", None)
-                tech_col["value_mapping_notes"] = meta_col_entry.get("value_mapping_notes", None)
+    # --- Etapa 2: Validar completude --- #
+    logger.info("Validando completude do schema combinado...")
+    for tech_obj_name, tech_obj_data in technical_data.items():
+        if tech_obj_name == 'fk_reference_counts': continue # Ignora chave interna
+        if not isinstance(tech_obj_data, dict):
+            logger.warning(f"Item inesperado encontrado durante validação no schema técnico: '{tech_obj_name}'.")
+            continue
 
-    logger.info(f"Mesclagem concluída. {len(objects_without_metadata)} objetos sem metadados e {len(columns_without_metadata)} colunas sem metadados.")
-    if objects_without_metadata:
-        logger.debug(f"Objetos sem metadados: {objects_without_metadata}")
-    if columns_without_metadata:
-         logger.debug(f"Colunas sem metadados: {columns_without_metadata}")
-         
-    return combined_schema
+        if tech_obj_name not in combined_schema:
+            logger.error(f"VALIDATION ERROR: Objeto técnico '{tech_obj_name}' está faltando no schema combinado!")
+            missing_objects.append(tech_obj_name)
+            is_complete = False
+        else:
+            combined_obj_data = combined_schema[tech_obj_name]
+            technical_columns = {col.get('name') for col in tech_obj_data.get('columns', []) if col.get('name')} # Set de nomes
+            combined_columns = {col.get('name') for col in combined_obj_data.get('columns', []) if col.get('name')} # Set de nomes
+            
+            missing_in_combined = technical_columns - combined_columns
+            if missing_in_combined:
+                logger.error(f"VALIDATION ERROR: Colunas técnicas faltando em '{tech_obj_name}' no schema combinado: {missing_in_combined}")
+                missing_columns[tech_obj_name] = sorted(list(missing_in_combined))
+                is_complete = False
+                
+            # Opcional: Verificar colunas extras no combinado (geralmente não deveria acontecer)
+            extra_in_combined = combined_columns - technical_columns
+            if extra_in_combined:
+                 logger.warning(f"VALIDATION WARNING: Colunas extras encontradas em '{tech_obj_name}' no schema combinado (não presentes no técnico): {extra_in_combined}")
 
-def save_combined_data(schema_data, filename):
-    """Salva o schema combinado em um arquivo JSON."""
+    validation_status = 'OK' if is_complete else 'Incomplete'
+    logger.info(f"Validação concluída. Status: {validation_status}")
+    if not is_complete:
+        logger.warning(f"  Objetos faltando: {missing_objects}")
+        logger.warning(f"  Colunas faltando: {missing_columns}")
+        
+    # Calcula colunas sem metadados manuais
+    missing_manual_metadata_count = total_column_count - manual_metadata_column_count
+
+    logger.info(f"Contagem: Total={total_column_count}, Com Manual={manual_metadata_column_count}, Sem Manual={missing_manual_metadata_count}")
+    
+    # Retorna todos os resultados
+    return combined_schema, total_column_count, manual_metadata_column_count, missing_manual_metadata_count, validation_status, missing_objects, missing_columns
+
+def save_combined_data(schema_data, filename, validation_info):
+    """Salva o schema combinado em um arquivo JSON, incluindo informações de validação e contagem."""
     if not schema_data:
         logger.error("Nenhum dado combinado para salvar.")
         return
-    logger.info(f"Salvando schema combinado em {filename}...")
+        
+    schema_data['_metadata_info'] = validation_info
+    
+    logger.info(f"Salvando schema combinado (com info de validação/contagem) em {filename}...")
     try:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         with open(filename, 'w', encoding='utf-8') as f:
@@ -108,14 +148,30 @@ def save_combined_data(schema_data, filename):
 
 # --- Execução Principal ---
 if __name__ == "__main__":
-    logger.info(f"Carregando schema técnico de: {TECHNICAL_SCHEMA_FILE}")
-    technical_data = load_json_safe(TECHNICAL_SCHEMA_FILE)
+    # Ajuste nos caminhos padrão (usar config.py seria melhor aqui, mas mantendo simplicidade por ora)
+    script_dir = os.path.dirname(__file__)
+    data_dir = os.path.join(script_dir, '..', 'data')
+    # Verifica se os caminhos em data/ existem, senão usa os originais
+    tech_file_path = os.path.join(data_dir, 'technical_schema_details.json')
+    if not os.path.exists(tech_file_path):
+        tech_file_path = TECHNICAL_SCHEMA_FILE # Usa o caminho antigo se não achar em data/
+        
+    meta_file_path = os.path.join(data_dir, 'schema_metadata.json')
+    if not os.path.exists(meta_file_path):
+        meta_file_path = METADATA_FILE # Usa o caminho antigo
+        
+    output_file_path = os.path.join(data_dir, 'combined_schema_details.json')
 
-    logger.info(f"Carregando metadados de: {METADATA_FILE}")
-    metadata = load_json_safe(METADATA_FILE)
+    logger.info(f"Carregando schema técnico de: {tech_file_path}")
+    technical_data = load_json_safe(tech_file_path)
+
+    logger.info(f"Carregando metadados de: {meta_file_path}")
+    metadata = load_json_safe(meta_file_path)
 
     if technical_data and metadata:
-        combined_schema = merge_schema_data(technical_data, metadata)
+        # Chama a função merge que agora retorna mais contagens
+        combined_schema, total_cols, manual_cols, missing_manual_cols, status, missing_obj, missing_col = merge_schema_data(technical_data, metadata)
+        
         if combined_schema:
              # Mantém as contagens do arquivo técnico original, se existirem
              if 'fk_reference_counts' in technical_data:
@@ -123,8 +179,20 @@ if __name__ == "__main__":
                  logger.info("Chave 'fk_reference_counts' preservada do schema técnico.")
              else:
                  logger.warning("Chave 'fk_reference_counts' não encontrada no schema técnico para preservar.")
-             save_combined_data(combined_schema, OUTPUT_COMBINED_FILE)
+                 
+             # Prepara informações de validação e contagem para salvar
+             validation_info = {
+                 'total_column_count': total_cols,
+                 'manual_metadata_column_count': manual_cols, # NOVO
+                 'missing_manual_metadata_column_count': missing_manual_cols, # NOVO
+                 'validation_status': status,
+                 'validation_timestamp': datetime.datetime.now().isoformat(),
+                 'missing_objects': missing_obj,
+                 'missing_columns': missing_col
+             }
+             
+             save_combined_data(combined_schema, output_file_path, validation_info)
     else:
         logger.error("Falha ao carregar um ou ambos os arquivos de schema. Mesclagem abortada.")
 
-    print(f"\nProcesso de mesclagem concluído. Resultado em {OUTPUT_COMBINED_FILE}") 
+    print(f"\nProcesso de mesclagem e validação concluído. Resultado em {output_file_path}") 

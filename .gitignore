@@ -19,6 +19,7 @@ parts/
 sdist/
 var/
 wheels/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
@@ -175,3 +176,8 @@ data/faiss_column_index.idx
 
 # !! NÃO IGNORAR METADADOS MANUAIS !!
 # Manter etapas-sem-gpu/schema_metadata.json data/schema_with_embeddings.json
+
+# Data files / Logs (Adicionado)
+data/
+!data/schema_metadata.json # Não ignorar o arquivo manual!
+data/app.log
