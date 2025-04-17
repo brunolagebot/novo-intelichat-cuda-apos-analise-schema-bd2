@@ -4,6 +4,8 @@ import os
 import logging
 import datetime
 import time
+import streamlit as st
+import argparse
 
 # Configuração básica de logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -12,12 +14,6 @@ logger = logging.getLogger(__name__)
 # --- Constantes de Arquivo e Conexão ---
 TECHNICAL_SCHEMA_FILE = 'data/combined_schema_details.json' # Usar o combinado para garantir que temos object_type
 OUTPUT_COUNTS_FILE = 'data/overview_counts.json'
-
-# !! ATENÇÃO: Pegar do ambiente seria mais seguro !!
-DB_PATH = os.getenv("FIREBIRD_DB_PATH", r"C:\Projetos\DADOS.FDB") # Use raw string
-DB_USER = os.getenv("FIREBIRD_USER", "SYSDBA")
-DB_PASSWORD = os.getenv("FIREBIRD_PASSWORD", "M@nagers2023") # Senha padrão insegura
-DB_CHARSET = os.getenv("FIREBIRD_CHARSET", "WIN1252")
 
 # --- Funções Auxiliares ---
 def load_technical_schema(file_path):
@@ -81,6 +77,21 @@ def save_counts(counts_data, file_path):
 
 # --- Execução Principal ---
 if __name__ == "__main__":
+    # --- NOVO: Parseamento de Argumentos de Linha de Comando ---
+    parser = argparse.ArgumentParser(description="Calcula contagem de linhas para tabelas/views e salva em JSON.")
+    parser.add_argument("--db-path", required=True, help="Caminho para o arquivo do banco de dados Firebird (.fdb)")
+    parser.add_argument("--db-user", required=True, help="Usuário do banco de dados Firebird")
+    parser.add_argument("--db-password", required=True, help="Senha do banco de dados Firebird")
+    parser.add_argument("--db-charset", default="WIN1252", help="Charset de conexão do Firebird (padrão: WIN1252)")
+    args = parser.parse_args()
+
+    # Usa os argumentos parseados
+    DB_PATH = args.db_path
+    DB_USER = args.db_user
+    DB_PASSWORD = args.db_password
+    DB_CHARSET = args.db_charset
+    # --- FIM: Parseamento ---
+
     logger.info(f"Iniciando cálculo de contagem de linhas. Schema: {TECHNICAL_SCHEMA_FILE}")
     start_time = time.time()
 

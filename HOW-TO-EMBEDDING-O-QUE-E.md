@@ -97,3 +97,82 @@ Exibir listas/tabelas para as categorias de chaves identificadas (PK Composta, J
 Na tabela principal de "Colunas Mais Referenciadas", adicionar a coluna "Importância" calculada.
 Implementação:
 Começarei modificando o streamlit_app.py para realizar a análise estrutural das chaves e calcular a importância.
+
+# Fluxo de Dados e Uso de IA (Descrições e Embeddings)
+
+Esta documentação descreve o fluxo atual de dados e como a Inteligência Artificial (Ollama) é utilizada para enriquecer os metadados do schema, tanto com descrições textuais quanto com embeddings vetoriais para busca semântica.
+
+## Visão Geral do Fluxo
+
+O processo envolve várias etapas e scripts para garantir que os metadados manuais, técnicos e gerados por IA sejam corretamente combinados e utilizados:
+
+1.  **Extração do Schema Técnico:** (Executado separadamente, geralmente via `scripts/extract_schema.py`)
+    *   O schema bruto (estrutura de tabelas, colunas, tipos, chaves) é extraído diretamente do banco de dados Firebird.
+    *   O resultado é salvo (geralmente em `data/technical_schema_details.json` ou similar).
+
+2.  **Edição de Metadados Manuais e Sugestões IA:** (Via `streamlit_app.py`)
+    *   O usuário utiliza a interface do Streamlit para visualizar o schema técnico e editar os metadados de negócio (descrições, notas de mapeamento) no arquivo `etapas-sem-gpu/schema_metadata.json`.
+    *   **IA para Descrições:** Dentro do Streamlit, o usuário pode clicar em botões "Sugerir IA" para tabelas/colunas. Isso aciona uma chamada à API do Ollama (`chat_completion`) para gerar uma descrição textual concisa.
+    *   A descrição sugerida pela IA (ou a editada manualmente) é salva diretamente no `schema_metadata.json` quando o usuário clica em "Salvar Alterações nos Metadados". Heurísticas (buscar descrições em colunas com mesmo nome ou relacionadas por FK/PK) também são aplicadas para preencher campos vazios.
+
+3.  **Merge de Schema Técnico e Metadados:** (Via `scripts/merge_schema_data.py`, pode ser acionado pelo botão no Streamlit)
+    *   Este script lê o schema técnico (`data/technical_schema_details.json`) e os metadados de negócio (`etapas-sem-gpu/schema_metadata.json`).
+    *   Ele combina essas informações, adicionando as descrições e notas aos detalhes técnicos de cada coluna/objeto.
+    *   Calcula também informações adicionais, como contagens de referência de chaves estrangeiras (`fk_reference_counts`).
+    *   O resultado combinado é salvo no arquivo `data/combined_schema_details.json`. Este arquivo serve de base para a próxima etapa.
+
+4.  **Geração de Embeddings:** (Via `scripts/generate_embeddings.py`, **executado separadamente**)
+    *   Este script (que precisa ser executado manualmente via terminal: `python scripts/generate_embeddings.py`) lê o arquivo `data/combined_schema_details.json`.
+    *   Para cada coluna (e opcionalmente, objeto), ele constrói uma string textual combinando informações relevantes (Nome Tabela, Nome Coluna, Tipo, Descrição, Notas, etc.).
+    *   **IA para Embeddings:** Ele envia essa string textual para a API de embeddings do Ollama (usando um modelo como `nomic-embed-text`).
+    *   O Ollama retorna um vetor numérico (embedding) que captura o significado semântico do texto.
+    *   O script adiciona esse vetor ao dicionário da coluna/objeto correspondente sob a chave `"embedding"`.
+    *   O resultado final, contendo o schema combinado *mais* os vetores de embedding, é salvo em um **novo arquivo**: `data/schema_with_embeddings.json`.
+
+5.  **Uso no Aplicativo Streamlit:** (`streamlit_app.py`)
+    *   O app carrega `data/combined_schema_details.json` para exibir informações técnicas e permitir a edição de metadados (via `schema_metadata.json`).
+    *   O app *tenta* carregar os embeddings do arquivo `data/schema_with_embeddings.json` (ou de um índice pré-calculado `data/faiss_column_index.idx`, se existir e a lógica for implementada).
+    *   **Construção do Índice FAISS:** Se embeddings são encontrados, o app usa a biblioteca FAISS para construir um índice vetorial em memória (`build_faiss_index`). Este índice permite buscas rápidas por similaridade.
+    *   **Busca Semântica:** Na aba de edição de coluna, o botão "Buscar Descrições Similares (FAISS)" usa o índice FAISS para encontrar colunas com significado textual similar (baseado nos embeddings) que já possuam descrição, auxiliando o usuário a reutilizar descrições existentes.
+
+## Componentes de IA e Armazenamento
+
+*   **Ollama (Descrições):**
+    *   **Onde:** `streamlit_app.py` (função `generate_ai_description`).
+    *   **Propósito:** Gerar sugestões de texto para descrições de tabelas/colunas.
+    *   **Input:** Nome do objeto/coluna, tipo.
+    *   **Output:** String de texto (descrição).
+    *   **Armazenamento:** Salvo no `schema_metadata.json` após confirmação/edição do usuário.
+*   **Ollama (Embeddings):**
+    *   **Onde:** `scripts/generate_embeddings.py` (executado separadamente).
+    *   **Propósito:** Gerar vetores numéricos que representam o significado do texto contextualizado de colunas/objetos.
+    *   **Input:** Texto combinado (Nome Tabela, Nome Coluna, Tipo, Descrição, Notas, etc.).
+    *   **Output:** Vetor numérico (lista de floats).
+    *   **Modelo (Exemplo):** `nomic-embed-text` (ou outro configurado no script).
+    *   **Armazenamento:** Salvo no `data/schema_with_embeddings.json` sob a chave `"embedding"`.
+*   **FAISS:**
+    *   **Onde:** `streamlit_app.py` (função `build_faiss_index`, `find_similar_columns`).
+    *   **Propósito:** Indexar os embeddings para permitir buscas rápidas por similaridade semântica.
+    *   **Input:** Embeddings carregados do arquivo `data/schema_with_embeddings.json`.
+    *   **Output:** Resultados de busca (colunas similares com descrição).
+    *   **Armazenamento:** O índice é construído em memória durante a execução do app Streamlit. Opcionalmente, poderia ser salvo/carregado do disco (`data/faiss_column_index.idx`) para acelerar inicializações futuras.
+
+## Quando Atualizar os Embeddings?
+
+É crucial executar novamente o script `scripts/generate_embeddings.py` **sempre que houver alterações significativas nos metadados textuais** (descrições ou notas de mapeamento) salvos no `etapas-sem-gpu/schema_metadata.json`.
+
+**Fluxo de Atualização:**
+
+1.  Editar metadados no Streamlit App e Salvar (`schema_metadata.json` é atualizado).
+2.  Executar `python scripts/merge_schema_data.py` (para atualizar `data/combined_schema_details.json`).
+3.  Executar `python scripts/generate_embeddings.py` (para recriar `data/schema_with_embeddings.json` com base nos textos atualizados).
+
+Isso garante que os embeddings reflitam o significado dos metadados mais recentes, mantendo a busca semântica precisa.
+
+## Nota sobre o Arquivo de Embeddings
+
+O arquivo `data/schema_with_embeddings.json`, que contém os vetores numéricos, pode se tornar **muito grande** (centenas de MB ou até GBs, dependendo do tamanho do schema e da dimensão dos embeddings).
+
+*   **`.gitignore`:** Por este motivo, ele foi adicionado ao arquivo `.gitignore` do projeto. Isso impede que ele seja enviado para o repositório Git (GitHub), mantendo o repositório leve.
+*   **Geração Local:** Como consequência, cada pessoa que clonar o repositório precisará executar o script `scripts/generate_embeddings.py` localmente para criar este arquivo e habilitar a funcionalidade de busca por similaridade no Streamlit.
+*   **Alternativa (Git LFS):** Se fosse necessário compartilhar os embeddings pré-gerados via Git, a solução seria usar o Git Large File Storage (LFS).

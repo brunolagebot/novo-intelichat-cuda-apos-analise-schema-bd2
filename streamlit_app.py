@@ -14,6 +14,9 @@ import numpy as np # NOVO: Para manipulação de vetores
 import faiss # NOVO: Para busca por similaridade
 import copy # NOVO: Para deepcopy
 import time # NOVO: Para medir o tempo
+import argparse # NOVO
+import uuid # NOVO: Para IDs de mensagem
+from src.utils.json_helpers import load_json, save_json # NOVO: Importa funções auxiliares
 
 # Configuração básica de logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -22,6 +25,18 @@ logger = logging.getLogger(__name__)
 # NOVO: Tentar importar a função de chat (lidar com erro se não existir)
 try:
     from src.ollama_integration.client import chat_completion
+    # NOVO: Tentar importar função de embedding
+    try:
+        from src.ollama_integration.client import get_embedding
+        OLLAMA_EMBEDDING_AVAILABLE = True
+        logger.info("Função de embedding Ollama (get_embedding) carregada.")
+    except ImportError:
+        OLLAMA_EMBEDDING_AVAILABLE = False
+        logger.warning("Função get_embedding não encontrada em src.ollama_integration.client. Busca semântica no chat desabilitada.")
+        def get_embedding(text): # Define dummy
+            st.error("Função de embedding Ollama não encontrada.")
+            return None
+
     OLLAMA_AVAILABLE = True
     logger.info("Integração Ollama carregada com sucesso.")
 except ImportError:
@@ -44,6 +59,8 @@ EMBEDDED_SCHEMA_FILE = 'data/schema_with_embeddings.json' # Schema WITH embeddin
 OVERVIEW_COUNTS_FILE = 'data/overview_counts.json' # NOVO: Arquivo para contagens cacheadas
 # NOVO: Definir o nome do arquivo de saída do merge para usar na mensagem
 OUTPUT_COMBINED_FILE = 'data/combined_schema_details.json'
+CHAT_HISTORY_FILE = 'data/chat_history.json' # NOVO
+CHAT_FEEDBACK_FILE = 'data/chat_feedback.json' # NOVO
 
 # --- Configurações Padrão de Conexão (Podem ser sobrescritas na interface) ---
 DEFAULT_DB_PATH = r"C:\Projetos\DADOS.FDB" # Use raw string para evitar problemas com barras invertidas
@@ -213,6 +230,17 @@ def find_existing_info(metadata, schema_data, current_object_name, target_col_na
     for obj_type_key in ['TABLES', 'VIEWS']:
         for obj_name, obj_meta in metadata.get(obj_type_key, {}).items():
             if obj_name == current_object_name: continue
+            
+            # --- DEBUGGING LOG --- #
+            logger.debug(f"[find_existing_info] Checking {obj_type_key}.{obj_name}: Type={type(obj_meta)}, Value='{str(obj_meta)[:200]}...'" ) # Log type and truncated value
+            # --- END DEBUGGING LOG ---
+
+            # --- CORREÇÃO: Verificar se obj_meta é um dicionário --- 
+            if not isinstance(obj_meta, dict):
+                logger.warning(f"[find_existing_info] Esperava um dicionário para {obj_type_key}.{obj_name}, mas encontrou {type(obj_meta)}. Pulando este objeto.")
+                continue # Pula para o próximo objeto se não for dict
+            # --- FIM CORREÇÃO ---
+
             col_meta = obj_meta.get('COLUMNS', {}).get(target_col_name)
             # MODIFICADO: Verifica descrição E notas
             if col_meta:
@@ -371,13 +399,19 @@ def generate_documentation_overview(technical_schema, metadata, overview_counts)
         row_count_val = count_info.get("count", "N/A")
         timestamp_val = count_info.get("timestamp")
 
-        # Formata contagem para exibição
+        # Formata contagem para exibição E extrai valor raw
         row_count_display = row_count_val
+        raw_count = np.nan # Default para NaN se não for número válido
         if isinstance(row_count_val, int) and row_count_val >= 0:
              row_count_display = f"{row_count_val:,}".replace(",", ".") # Formato brasileiro
+             raw_count = row_count_val # Guarda o int original
         elif isinstance(row_count_val, str) and row_count_val.startswith("Erro"):
             row_count_display = "Erro" # Simplifica exibição de erro
-        
+            # raw_count permanece NaN
+        elif row_count_val == "N/A":
+             row_count_display = "N/A"
+             # raw_count permanece NaN
+
         # Formata timestamp para exibição
         timestamp_display = "-"
         if timestamp_val:
@@ -397,19 +431,36 @@ def generate_documentation_overview(technical_schema, metadata, overview_counts)
             'Col. Descritas': described_cols,
             '% Descritas': f"{desc_perc:.1f}%",
             'Col. c/ Notas': noted_cols,
-            '% c/ Notas': f"{notes_perc:.1f}%"
+            '% c/ Notas': f"{notes_perc:.1f}%",
+            '_Linhas_Raw': raw_count # NOVO: Adiciona coluna raw
         })
 
     df_overview = pd.DataFrame(overview_data)
     if not df_overview.empty:
-        # Ordenar colunas para melhor visualização
+        # NOVO: Converte coluna raw para numérico
+        df_overview['_Linhas_Raw'] = pd.to_numeric(df_overview['_Linhas_Raw'], errors='coerce')
+
+        # Ordenar colunas para melhor visualização (mantém ordem original)
         cols_order = ['Objeto', 'Tipo', 'Descrição?', 'Total Colunas', 'Linhas (Cache)', 'Contagem Em',
                       'Col. Descritas', '% Descritas', 'Col. c/ Notas', '% c/ Notas']
         # Remove colunas que não existem mais ou ajusta a ordem
         cols_order = [col for col in cols_order if col in df_overview.columns]
-        df_overview = df_overview[cols_order].sort_values(by=['Tipo', 'Objeto']).reset_index(drop=True)
-    logger.info(f"Visão geral gerada. Shape: {df_overview.shape}")
-    return df_overview
+        
+        # NOVO: Ordena o DataFrame pelos dados raw (desc) e depois por tipo/objeto
+        # Mantém NaNs por último na ordenação decrescente
+        df_overview = df_overview.sort_values(
+            by=['_Linhas_Raw', 'Tipo', 'Objeto'], 
+            ascending=[False, True, True],
+            na_position='last' # Garante que erros/N/A fiquem no final
+        ).reset_index(drop=True)
+        
+        # Retorna apenas as colunas visíveis (sem _Linhas_Raw)
+        df_overview_display = df_overview[cols_order]
+    else:
+        df_overview_display = pd.DataFrame(columns=cols_order) # Retorna DF vazio com colunas certas se não houver dados
+        
+    logger.info(f"Visão geral gerada. Shape: {df_overview_display.shape}")
+    return df_overview_display # Retorna o DF pronto para exibição
 
 # --- NOVA Função para buscar Timestamp da Última NFS --- 
 # REMOVIDO CACHE - Buscar sob demanda
@@ -569,6 +620,10 @@ def apply_heuristics_globally(metadata_dict, technical_schema):
 
             # Só busca se algo estiver faltando (descrição OU notas)
             if not current_desc or not current_notes:
+                # --- DEBUG CALL SITE (GLOBAL HEURISTICS) --- #
+                logger.debug(f"[GLOBAL HEURISTICS] Calling find_existing_info for {obj_name}.{col_name}")
+                logger.debug(f"[GLOBAL HEURISTICS] metadata_dict type: {type(metadata_dict)}, value[:200]: '{str(metadata_dict)[:200]}...'")
+                # --- END DEBUG CALL SITE ---
                 # Procura informação existente (descrição E/OU notas)
                 suggested_desc, desc_source, suggested_notes, notes_source = find_existing_info(
                     metadata_dict, technical_schema, obj_name, col_name
@@ -578,7 +633,6 @@ def apply_heuristics_globally(metadata_dict, technical_schema):
                 if not current_desc and suggested_desc:
                     logger.debug(f"Heurística global (Descrição): Atualizando '{obj_name}.{col_name}' com base em '{desc_source}'")
                     col_meta_target['description'] = suggested_desc
-                    col_meta_target['source_description'] = f"heuristic: {desc_source}" # Adiciona marcador
                     updated_desc_count += 1
                     found_something_new = True
                 elif current_desc:
@@ -588,7 +642,6 @@ def apply_heuristics_globally(metadata_dict, technical_schema):
                 if not current_notes and suggested_notes:
                     logger.debug(f"Heurística global (Notas): Atualizando '{obj_name}.{col_name}' com base em '{notes_source}'")
                     col_meta_target['value_mapping_notes'] = suggested_notes
-                    col_meta_target['source_notes'] = f"heuristic: {notes_source}" # Adiciona marcador
                     updated_notes_count += 1
                     found_something_new = True
                 elif current_notes:
@@ -616,8 +669,78 @@ def apply_heuristics_globally(metadata_dict, technical_schema):
     return updated_desc_count, updated_notes_count
 # --- FIM NOVA Função ---
 
-# --- NOVO: Funções FAISS ---
+# --- NOVO: Função para Preencher Descrições via Chaves FK -> PK ---
+def populate_descriptions_from_keys(metadata_dict, technical_schema):
+    """Preenche descrições de FKs vazias com base nas descrições das PKs referenciadas."""
+    logger.info("Iniciando preenchimento de descrições via chaves FK -> PK...")
+    updated_count = 0
+    processed_fk_cols = 0
 
+    # Iterar sobre todas as tabelas/views no schema técnico
+    for table_name, table_data in technical_schema.items():
+        if not isinstance(table_data, dict) or table_data.get('object_type') not in ['TABLE', 'VIEW']:
+            continue
+
+        obj_type = table_data.get('object_type', 'TABLE') # Default para TABLE
+        obj_type_key = obj_type + "S"
+        constraints = table_data.get('constraints', {})
+        foreign_keys = constraints.get('foreign_keys', [])
+
+        # Acessar metadados da tabela atual (garantir que exista)
+        if obj_type_key not in metadata_dict: metadata_dict[obj_type_key] = OrderedDict()
+        if table_name not in metadata_dict[obj_type_key]: metadata_dict[obj_type_key][table_name] = OrderedDict({'description': '', 'COLUMNS': OrderedDict()})
+        if 'COLUMNS' not in metadata_dict[obj_type_key][table_name]: metadata_dict[obj_type_key][table_name]['COLUMNS'] = OrderedDict()
+        current_table_meta_cols = metadata_dict[obj_type_key][table_name]['COLUMNS']
+
+        # Iterar sobre as chaves estrangeiras da tabela atual
+        for fk in foreign_keys:
+            fk_cols = fk.get('columns', [])
+            ref_table = fk.get('references_table')
+            ref_cols = fk.get('references_columns', [])
+
+            if not ref_table or len(fk_cols) != len(ref_cols):
+                logger.warning(f"FK malformada em {table_name}: {fk}")
+                continue # Pula esta FK se estiver inconsistente
+
+            # Encontrar o tipo de objeto da tabela referenciada
+            ref_table_data = technical_schema.get(ref_table)
+            if not ref_table_data:
+                logger.warning(f"Tabela referenciada {ref_table} não encontrada no schema técnico.")
+                continue
+            ref_obj_type = ref_table_data.get('object_type', 'TABLE')
+            ref_obj_type_key = ref_obj_type + "S"
+
+            # Iterar sobre as colunas da FK
+            for i, fk_col_name in enumerate(fk_cols):
+                processed_fk_cols += 1
+                ref_col_name = ref_cols[i]
+
+                # Garantir que a coluna FK exista nos metadados
+                if fk_col_name not in current_table_meta_cols:
+                    current_table_meta_cols[fk_col_name] = OrderedDict()
+                fk_col_meta = current_table_meta_cols[fk_col_name]
+
+                # Verificar se a descrição da FK está vazia
+                current_fk_desc = fk_col_meta.get('description', '').strip()
+                if not current_fk_desc:
+                    # Buscar descrição da PK referenciada
+                    ref_table_meta = metadata_dict.get(ref_obj_type_key, {}).get(ref_table, {})
+                    ref_col_meta = ref_table_meta.get('COLUMNS', {}).get(ref_col_name, {})
+                    ref_pk_desc = ref_col_meta.get('description', '').strip()
+
+                    # Se encontrou descrição na PK, aplica na FK
+                    if ref_pk_desc:
+                        source_str = f"key -> {ref_table}.{ref_col_name}"
+                        logger.debug(f"Preenchendo '{table_name}.{fk_col_name}' via {source_str}")
+                        fk_col_meta['description'] = ref_pk_desc
+                        updated_count += 1
+
+    logger.info(f"Preenchimento via chaves concluído. Colunas FK processadas: {processed_fk_cols}. Descrições atualizadas: {updated_count}")
+    return updated_count
+# --- FIM Função FK -> PK ---
+
+
+# --- NOVO: Funções FAISS ---
 @st.cache_resource # Cache do índice FAISS para performance
 def build_faiss_index(schema_data):
     logger.info("---> EXECUTANDO build_faiss_index") # Log de diagnóstico
@@ -713,6 +836,35 @@ def find_similar_columns(faiss_index, schema_data, index_to_key_map, target_embe
             continue
 
     return similar_columns
+
+# --- NOVO: Função Wrapper para Embedding da Query ---
+def get_query_embedding(text: str) -> np.ndarray | None:
+    """Gera embedding para um texto usando a função Ollama e trata erros."""
+    if not OLLAMA_EMBEDDING_AVAILABLE:
+        logger.warning("Tentativa de gerar embedding sem função disponível.")
+        return None
+    try:
+        with st.spinner("Gerando embedding para a pergunta..."): # Feedback
+            embedding_list = get_embedding(text) # Chama a função importada
+        
+        if embedding_list and isinstance(embedding_list, list):
+            embedding_np = np.array(embedding_list).astype('float32')
+            if embedding_np.shape[0] == EMBEDDING_DIMENSION:
+                logger.info(f"Embedding gerado para a query (Shape: {embedding_np.shape})")
+                return embedding_np
+            else:
+                logger.error(f"Erro: Dimensão do embedding da query ({embedding_np.shape[0]}) diferente da esperada ({EMBEDDING_DIMENSION}).")
+                st.toast(f"Erro na dimensão do embedding gerado pela IA ({embedding_np.shape[0]} vs {EMBEDDING_DIMENSION}).", icon="❌")
+                return None
+        else:
+            logger.error(f"Função get_embedding não retornou uma lista válida: {type(embedding_list)}")
+            st.toast("Erro ao gerar embedding da pergunta (resposta inválida da IA).", icon="❌")
+            return None
+    except Exception as e:
+        logger.exception("Erro ao chamar get_embedding:")
+        st.toast(f"Erro ao gerar embedding da pergunta: {e}", icon="❌")
+        return None
+# --- FIM: Função Wrapper Embedding ---
 
 # --- NOVO: Função para Comparar Metadados ---
 def compare_metadata_changes(initial_meta, current_meta):
@@ -1024,7 +1176,13 @@ def load_and_process_data():
     start_time_step = time.time()
     progress_bar.progress(float(current_step)/total_steps, text=f"({current_step+1}/{total_steps}) Executando: {step_name}...")
 
-    # --- NOVO: Inicializa estado do toggle de embeddings ---
+    # --- NOVO: Inicializa estado do toggle de auto-save e tempo --- #
+    if 'auto_save_enabled' not in st.session_state:
+        st.session_state.auto_save_enabled = False # Começa desligado
+    if 'last_save_time' not in st.session_state:
+        st.session_state.last_save_time = time.time() # Marca o tempo inicial
+
+    # --- NOVO: Inicializa estado do toggle de embeddings --- # (Mantido)
     if 'use_embeddings' not in st.session_state:
         st.session_state.use_embeddings = False # Começa desligado
 
@@ -1125,7 +1283,7 @@ st.sidebar.title("Navegação e Ações")
 # Seletor de Modo
 app_mode = st.sidebar.radio(
     "Modo de Operação",
-    ["Editar Metadados", "Visão Geral", "Análise"], # NOVO: Adicionado 'Análise'
+    ["Editar Metadados", "Visão Geral", "Análise", "Chat com Schema"], # NOVO: Chat
     key='app_mode_selector'
 )
 st.sidebar.divider()
@@ -1196,14 +1354,40 @@ else:
 
 st.sidebar.divider()
 
-# --- NOVO: Toggle para Habilitar/Desabilitar Ollama ---
-st.sidebar.divider()
-st.sidebar.subheader("Configurações")
+# --- NOVO: Toggle para Embeddings e IA ---
+st.sidebar.subheader("Recursos Otimizados")
+# Verifica se o arquivo de embeddings existe para habilitar/desabilitar
+embeddings_file_exists = os.path.exists(EMBEDDED_SCHEMA_FILE)
+if embeddings_file_exists:
+    st.sidebar.toggle(
+        "Usar Embeddings (Schema Otimizado)",
+        key='use_embeddings',
+        value=st.session_state.get('use_embeddings', False), # Garante que use o valor do estado
+        help=f"Carrega `{EMBEDDED_SCHEMA_FILE}` para busca por similaridade e análise aprimorada. Pode levar um momento para atualizar.",
+        on_change=handle_embedding_toggle # Define o callback
+    )
+else:
+    st.sidebar.toggle(
+        "Usar Embeddings (Schema Otimizado)",
+        key='use_embeddings',
+        help=f"Arquivo `{EMBEDDED_SCHEMA_FILE}` não encontrado. Execute `scripts/generate_embeddings.py` para habilitar.",
+        value=False, # Força desligado
+        disabled=True # Desabilita o toggle
+    )
+    if st.session_state.get('use_embeddings'): # Garante que o estado seja False se o arquivo sumir
+        st.session_state.use_embeddings = False
+
+# Toggle Ollama
 if OLLAMA_AVAILABLE:
-    st.sidebar.toggle("Habilitar Sugestões IA (Ollama)", key='ollama_enabled', help="Desabilitar pode melhorar a performance se não precisar das sugestões.")
+    st.sidebar.toggle("Habilitar Sugestões IA (Ollama)", 
+                      key='ollama_enabled', 
+                      value=st.session_state.get('ollama_enabled', False), # Usa valor do estado
+                      help="Desabilitar pode melhorar a performance se não precisar das sugestões.")
 else:
     st.sidebar.caption("Sugestões IA (Ollama) indisponíveis.")
-# --- FIM: Toggle --- 
+# --- FIM: Toggles ---
+
+st.sidebar.divider()
 
 # --- Conteúdo Principal (Condicional ao Modo) ---
 
@@ -1230,8 +1414,19 @@ if app_mode == "Visão Geral":
             
             try:
                 python_executable = sys.executable 
+                # NOVO: Construir comando com argumentos para credenciais
+                cmd_list = [
+                    python_executable, 
+                    script_path,
+                    "--db-path", db_path_for_ts,      # Passa o caminho do DB
+                    "--db-user", db_user_for_ts,      # Passa o usuário
+                    "--db-password", db_password_for_ts, # Passa a senha
+                    "--db-charset", db_charset_for_ts   # Passa o charset
+                ]
+                logger.info(f"Executando comando: {' '.join(cmd_list[:5])} --db-password **** ...") # Log sem senha
+                
                 process = subprocess.Popen(
-                    [python_executable, script_path],
+                    cmd_list, # CORRIGIDO: Usa a lista construída com argumentos
                     stdout=subprocess.PIPE, 
                     stderr=subprocess.PIPE,
                     text=True, # Decodificar como texto
@@ -1457,6 +1652,10 @@ elif app_mode == "Editar Metadados":
 
                             # Só busca heurística se um dos campos estiver vazio
                             if not current_col_desc_saved or not current_col_notes_saved:
+                                # --- DEBUG CALL SITE --- #
+                                logger.debug(f"[CALL SITE] Calling find_existing_info for {selected_object}.{col_name}")
+                                logger.debug(f"[CALL SITE] metadata_dict type: {type(metadata_dict)}, value[:200]: '{str(metadata_dict)[:200]}...'")
+                                # --- END DEBUG CALL SITE ---
                                 suggested_desc, desc_source_from_func, suggested_notes, notes_source_from_func = find_existing_info(
                                     metadata_dict, technical_schema_data, selected_object, col_name
                                 )
@@ -1627,34 +1826,107 @@ elif app_mode == "Editar Metadados":
             # --- NOVO: Seção de Pré-visualização de Dados ---
             with st.expander("👁️ Pré-Visualização de Dados", expanded=False):
                 num_rows_to_fetch = st.number_input(
-                    "Número de linhas para buscar:", 
-                    min_value=1, 
-                    # max_value=500, # REMOVIDO: Permitir valores maiores
-                    value=10, 
-                    step=1, # Mudar step para 1 para facilitar digitação de qualquer número
+                    "Número de linhas para buscar:",
+                    min_value=1,
+                    value=10,
+                    step=1,
                     key=f"num_rows_{selected_object}",
                     help="Digite o número de linhas desejado. Valores muito altos podem impactar o desempenho."
                 )
                 st.caption("⚠️ Solicitar muitas linhas pode tornar a aplicação lenta ou consumir muita memória.")
-                
-                if st.button("Carregar Amostra", key=f"load_sample_{selected_object}"):
-                    # Usa os mesmos parâmetros de conexão da busca de timestamp
-                    sample_data = fetch_sample_data(
-                        db_path_for_ts,
-                        db_user_for_ts,
-                        db_password_for_ts,
-                        db_charset_for_ts,
-                        selected_object, # Nome da tabela/view atual
-                        num_rows_to_fetch
-                    )
-                    
-                    if isinstance(sample_data, pd.DataFrame):
-                        if sample_data.empty:
-                            st.info(f"Nenhuma amostra de dados retornada para '{selected_object}'. A tabela pode estar vazia.")
-                        else:
-                            st.dataframe(sample_data, use_container_width=True)
-                    else: # Se retornou uma string de erro
-                        st.error(f"Falha ao carregar amostra: {sample_data}")
+
+                col_load, col_export_txt = st.columns(2) # Colunas para botões
+
+                with col_load:
+                    if st.button("Carregar Amostra na Tela", key=f"load_sample_{selected_object}"):
+                        # Limpa estado de exportação anterior (Excel e TXT)
+                        st.session_state[f'excel_export_data_{selected_object}'] = None
+                        st.session_state[f'excel_export_filename_{selected_object}'] = None
+                        st.session_state[f'excel_export_error_{selected_object}'] = None
+                        st.session_state[f'txt_export_bytes_{selected_object}'] = None
+                        st.session_state[f'txt_export_filename_{selected_object}'] = None
+                        st.session_state[f'txt_export_error_{selected_object}'] = None
+                        # Busca dados para exibir
+                        sample_data_display = fetch_sample_data(
+                            db_path_for_ts, db_user_for_ts, db_password_for_ts,
+                            db_charset_for_ts, selected_object, num_rows_to_fetch
+                        )
+                        # Armazena no estado para exibição persistente
+                        st.session_state[f'sample_data_display_{selected_object}'] = sample_data_display
+
+                # Exibe o DataFrame ou erro armazenado no estado
+                sample_data_result = st.session_state.get(f'sample_data_display_{selected_object}')
+                if isinstance(sample_data_result, pd.DataFrame):
+                    if sample_data_result.empty:
+                        st.info(f"Nenhuma amostra de dados retornada para '{selected_object}'. A tabela pode estar vazia.")
+                    else:
+                        st.dataframe(sample_data_result, use_container_width=True)
+                elif isinstance(sample_data_result, str): # Se for uma string de erro
+                    st.error(f"Falha ao carregar amostra: {sample_data_result}")
+
+                # --- NOVO: Botão Exportar TXT ---
+                with col_export_txt:
+                    if st.button("Gerar Amostra para Exportar (TXT)", key=f"generate_export_txt_{selected_object}"):
+                        logger.info(f"Gerando amostra TXT de {num_rows_to_fetch} linhas para exportar de {selected_object}...")
+                        # Limpa estado de exportação anterior (Excel e TXT) para evitar mostrar botões antigos
+                        st.session_state[f'excel_export_data_{selected_object}'] = None
+                        st.session_state[f'excel_export_filename_{selected_object}'] = None
+                        st.session_state[f'excel_export_error_{selected_object}'] = None
+                        st.session_state[f'txt_export_bytes_{selected_object}'] = None
+                        st.session_state[f'txt_export_filename_{selected_object}'] = None
+                        st.session_state[f'txt_export_error_{selected_object}'] = None
+
+                        export_data_txt = fetch_sample_data(
+                            db_path_for_ts, db_user_for_ts, db_password_for_ts,
+                            db_charset_for_ts, selected_object, num_rows_to_fetch
+                        )
+
+                        if isinstance(export_data_txt, pd.DataFrame):
+                            if export_data_txt.empty:
+                                st.warning(f"Nenhum dado retornado para '{selected_object}'. O arquivo TXT não será gerado.")
+                            else:
+                                try:
+                                    # Trata BLOBs para TXT também
+                                    df_to_export_txt = export_data_txt.copy()
+                                    for col in df_to_export_txt.columns:
+                                        if df_to_export_txt[col].dtype == 'object':
+                                            first_non_null = df_to_export_txt[col].dropna().iloc[0] if not df_to_export_txt[col].dropna().empty else None
+                                            if isinstance(first_non_null, bytes):
+                                                df_to_export_txt[col] = df_to_export_txt[col].apply(lambda x: "[BLOB Data]" if isinstance(x, bytes) else x)
+
+                                    # Converte para string formatada
+                                    txt_string = df_to_export_txt.to_string(index=False)
+                                    # Codifica para bytes
+                                    st.session_state[f'txt_export_bytes_{selected_object}'] = txt_string.encode('utf-8')
+                                    st.session_state[f'txt_export_filename_{selected_object}'] = f"amostra_{selected_object}.txt"
+                                    logger.info(f"Amostra TXT para {selected_object} gerada e pronta para download.")
+                                except Exception as e:
+                                    logger.exception("Erro ao gerar o arquivo TXT em memória.")
+                                    st.session_state[f'txt_export_error_{selected_object}'] = f"Erro ao gerar TXT: {e}"
+                        else: # Erro retornado por fetch_sample_data
+                            st.session_state[f'txt_export_error_{selected_object}'] = f"Falha ao buscar dados para exportar TXT: {export_data_txt}"
+
+                # Exibir botão de download TXT ou erro (fora do if do botão gerar)
+                if st.session_state.get(f'txt_export_bytes_{selected_object}') and st.session_state.get(f'txt_export_filename_{selected_object}'):
+                    with col_export_txt: # Coloca o botão de download na mesma coluna
+                         st.download_button(
+                              label="⬇️ Baixar Amostra TXT",
+                              data=st.session_state[f'txt_export_bytes_{selected_object}'],
+                              file_name=st.session_state[f'txt_export_filename_{selected_object}'],
+                              mime="text/plain",
+                              key=f"download_txt_{selected_object}",
+                              use_container_width=True # Faz o botão ocupar a coluna
+                         )
+                    # Limpa estado após exibir o botão (para não reaparecer automaticamente)
+                    # Considerar se realmente quer limpar aqui ou deixar baixar múltiplas vezes
+                    # st.session_state[f'txt_export_bytes_{selected_object}'] = None
+                    # st.session_state[f'txt_export_filename_{selected_object}'] = None
+                elif st.session_state.get(f'txt_export_error_{selected_object}'):
+                     with col_export_txt: # Exibe erro na coluna do botão TXT
+                         st.error(st.session_state[f'txt_export_error_{selected_object}'])
+                     # Limpa erro após exibir
+                     # st.session_state[f'txt_export_error_{selected_object}'] = None
+
             # --- FIM: Seção de Pré-visualização de Dados ---
 
             # --- NOVO: Seção de Exportação Excel ---
@@ -1769,6 +2041,9 @@ elif app_mode == "Editar Metadados":
                         # NOVO: Atualizar estado inicial após salvar com sucesso
                         st.session_state.initial_metadata = copy.deepcopy(st.session_state.metadata)
                         logger.info("Estado inicial dos metadados atualizado após salvar.")
+                        # ATUALIZA O TEMPO DO ÚLTIMO SAVE
+                        st.session_state.last_save_time = time.time()
+                        logger.info(f"Tempo do último salvamento atualizado para: {st.session_state.last_save_time}")
                     except Exception as e:
                         logger.warning(f"Erro ao limpar cache ou atualizar estado inicial: {e}")
                 else:
@@ -1916,9 +2191,275 @@ elif app_mode == "Análise":
     else:
         st.info("Nenhuma coluna identificada como parte de chave estrangeira composta.")
 
+# --- NOVO: Modo Chat com Schema ---
+elif app_mode == "Chat com Schema":
+    st.header("💬 Chat com Schema")
+    st.caption("Faça perguntas sobre o schema documentado. O assistente usará os metadados como contexto.")
+
+    if not OLLAMA_AVAILABLE:
+        st.error("Funcionalidade de Chat indisponível. Integração Ollama não carregada.")
+    else:
+        # Inicializa histórico de chat e feedback (carregando do arquivo)
+        if "messages" not in st.session_state:
+            st.session_state.messages = load_json(CHAT_HISTORY_FILE, [])
+        if "feedback_log" not in st.session_state:
+            st.session_state.feedback_log = load_json(CHAT_FEEDBACK_FILE, [])
+            # Cria um set de IDs com feedback para busca rápida
+            st.session_state.feedback_ids = {fb['message_id'] for fb in st.session_state.feedback_log}
+
+        # Exibe mensagens do histórico
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+                # Adiciona botões de feedback para mensagens do assistente
+                if message["role"] == "assistant":
+                    message_id = message.get("message_id") # Pega o ID da mensagem
+                    if message_id:
+                        feedback_given = message_id in st.session_state.get('feedback_ids', set())
+                        # Cria colunas para os botões
+                        fb_cols = st.columns(3)
+                        ratings = ["Bom", "Médio", "Ruim"]
+                        icons = ["👍", "🤔", "👎"] # Ou use texto direto
+                        for i, rating in enumerate(ratings):
+                            with fb_cols[i]:
+                                button_key = f"feedback_{message_id}_{rating}"
+                                if st.button(icons[i], key=button_key, help=rating, disabled=feedback_given, use_container_width=True):
+                                    if not feedback_given:
+                                        new_feedback = {"message_id": message_id, "rating": rating, "timestamp": time.time()}
+                                        st.session_state.feedback_log.append(new_feedback)
+                                        st.session_state.feedback_ids.add(message_id) # Atualiza o set
+                                        if save_json(st.session_state.feedback_log, CHAT_FEEDBACK_FILE):
+                                            st.toast(f"Feedback '{rating}' registrado!", icon="✍️")
+                                        else:
+                                            st.toast("Erro ao salvar feedback!", icon="❌")
+                                        st.rerun()
+
+        # Input do usuário
+        if prompt := st.chat_input("Qual sua dúvida sobre o schema?"):
+            # Adiciona e exibe a mensagem do usuário
+            user_message_id = str(uuid.uuid4()) # Gera ID único
+            user_message = {"role": "user", "content": prompt, "message_id": user_message_id}
+            st.session_state.messages.append(user_message)
+            # Salva histórico APÓS adicionar a mensagem do usuário
+            # save_json(st.session_state.messages, CHAT_HISTORY_FILE)
+            
+            with st.chat_message("user"):
+                st.markdown(prompt)
+
+            # Prepara para a resposta do assistente
+            with st.chat_message("assistant"):
+                message_placeholder = st.empty()
+                message_placeholder.markdown("Pensando... 🧠")
+                
+                # --- Lógica de Coleta de Contexto ---
+                context_parts = []
+                max_context_tokens = 3000 # Limite aproximado (ajustar conforme necessário)
+                current_context_tokens = 0
+                context_limit_reached = False # Flag para parar de adicionar
+
+                # REMOVIDA função interna add_to_context
+
+                # 1. Contexto Global
+                global_context = st.session_state.metadata.get("_GLOBAL_CONTEXT", "")
+                if global_context and not context_limit_reached:
+                    tokens = len(global_context.split())
+                    if current_context_tokens + tokens < max_context_tokens:
+                         context_parts.append(f"--- Contexto Geral ---\n{global_context}")
+                         current_context_tokens += tokens
+                    else:
+                        context_limit_reached = True
+                        logger.warning("Limite de contexto atingido ao adicionar Contexto Geral.")
+
+                # 2. Busca por Palavra-chave (Nomes de Tabelas/Views/Colunas)
+                found_tables = set()
+                prompt_lower = prompt.lower()
+                for obj_name, obj_data in technical_schema_data.items():
+                    if context_limit_reached: break # Para loop externo se limite atingido
+                    
+                    obj_type = obj_data.get('object_type', 'OBJECT')
+                    obj_meta = st.session_state.metadata.get(obj_type + "S", {}).get(obj_name, {})
+                    table_context_to_add = []
+                    table_tokens = 0
+
+                    # Verifica nome da tabela/view E descrição da tabela
+                    found_table_by_name = obj_name.lower() in prompt_lower
+                    table_desc = obj_meta.get("description", "").strip()
+                    
+                    if found_table_by_name or table_desc: # Se o nome foi mencionado OU tem descrição
+                        header = f"--- {obj_type.capitalize()}: {obj_name} ---"
+                        table_context_to_add.append(header)
+                        table_tokens += len(header.split())
+                        if table_desc:
+                             desc_text = f"Descrição: {table_desc}"
+                             table_context_to_add.append(desc_text)
+                             table_tokens += len(desc_text.split())
+                        found_tables.add(obj_name) # Marca como encontrada
+
+                    # Verifica nomes das colunas dentro desta tabela/view
+                    column_context_parts = []
+                    column_tokens = 0
+                    for col_data in obj_data.get('columns', []):
+                        if context_limit_reached: break # Para loop interno
+                        
+                        col_name = col_data.get('name')
+                        if col_name and col_name.lower() in prompt_lower:
+                             col_meta = obj_meta.get("COLUMNS", {}).get(col_name, {})
+                             col_desc = col_meta.get("description", "").strip()
+                             col_notes = col_meta.get("value_mapping_notes", "").strip()
+                             
+                             if col_desc or col_notes: # Só adiciona se tiver info útil
+                                 col_str_parts = [f"  Coluna: {col_name}"]
+                                 col_part_tokens = len(col_name.split()) + 2
+                                 if col_desc:
+                                     desc_text = f"    Descrição: {col_desc}"
+                                     col_str_parts.append(desc_text)
+                                     col_part_tokens += len(desc_text.split())
+                                 if col_notes:
+                                     notes_text = f"    Notas: {col_notes}"
+                                     col_str_parts.append(notes_text)
+                                     col_part_tokens += len(notes_text.split())
+                                 
+                                 # Verifica se esta coluna cabe
+                                 if current_context_tokens + table_tokens + column_tokens + col_part_tokens < max_context_tokens:
+                                      column_context_parts.extend(col_str_parts)
+                                      column_tokens += col_part_tokens
+                                 else:
+                                      context_limit_reached = True
+                                      logger.warning(f"Limite de contexto atingido ao adicionar Coluna '{col_name}'.")
+                                      break # Para de processar colunas desta tabela
+                    
+                    # Adiciona contexto da tabela e suas colunas (se couber e houver algo)
+                    if (table_context_to_add or column_context_parts) and not context_limit_reached:
+                         if current_context_tokens + table_tokens + column_tokens < max_context_tokens:
+                              context_parts.extend(table_context_to_add) 
+                              context_parts.extend(column_context_parts)
+                              current_context_tokens += table_tokens + column_tokens
+                         else:
+                              context_limit_reached = True
+                              logger.warning(f"Limite de contexto atingido ao adicionar Bloco Tabela '{obj_name}'.")
+                    elif context_limit_reached:
+                        break # Sai do loop de tabelas
+
+                # 3. Busca Semântica (FAISS - Se Habilitado)
+                if st.session_state.get('use_embeddings', False) and st.session_state.get('faiss_index') and not context_limit_reached:
+                    logger.info("Chat: Realizando busca FAISS para contexto adicional.")
+                    try:
+                        # Gerar embedding para a pergunta (precisa da função correta)
+                        # Assumindo que temos uma função `get_embedding(text)` disponível
+                        # query_embedding = get_embedding(prompt) # SUBSTITUIR PELA FUNÇÃO REAL
+                        # Placeholder - Precisamos da função de embedding! Por enquanto, não executa.
+                        query_embedding = None 
+                        logger.warning("Função para gerar embedding da query não implementada/disponível. Busca FAISS pulada.")
+
+                        if query_embedding is not None:
+                            similar_cols = find_similar_columns(
+                                st.session_state.faiss_index,
+                                st.session_state.technical_schema, 
+                                st.session_state.index_to_key_map,
+                                query_embedding,
+                                k=5 # Buscar 5 mais similares com descrição
+                            )
+                            if similar_cols:
+                                faiss_context = "--- Contexto Similar (Busca Semântica) ---\n"
+                                for sim_col in similar_cols:
+                                    # Evitar adicionar tabelas já incluídas por palavra-chave?
+                                    # Por ora, adiciona a coluna similar diretamente
+                                    faiss_context += f"Tabela '{sim_col['table']}', Coluna '{sim_col['column']}': {sim_col['description']}\n"
+                                # Adiciona o contexto FAISS (com verificação de limite)
+                                tokens_faiss = len(faiss_context.split())
+                                if current_context_tokens + tokens_faiss < max_context_tokens:
+                                    context_parts.append(faiss_context)
+                                    current_context_tokens += tokens_faiss
+                                else:
+                                    context_limit_reached = True
+                                    logger.warning("Limite de contexto atingido ao adicionar contexto FAISS.")
+                    except Exception as e:
+                        logger.error(f"Erro durante busca FAISS para chat: {e}")
+
+                # --- Monta o Prompt Final ---
+                final_context = "\n".join(context_parts)
+                if not final_context:
+                    final_context = "Nenhum contexto relevante encontrado nos metadados."
+                
+                system_prompt = "Você é um assistente especialista em banco de dados. Responda à pergunta do usuário baseando-se *apenas* e *estritamente* no contexto fornecido sobre o schema. Não invente informações. Se a resposta não estiver no contexto, diga que não encontrou a informação no contexto fornecido."
+                user_prompt_for_llm = f"**Contexto do Schema:**\n{final_context}\n\n**Pergunta:**\n{prompt}"
+                
+                logger.debug(f"Enviando para LLM:\nSystem: {system_prompt}\nUser: {user_prompt_for_llm}")
+                
+                try:
+                    # Chamada ao LLM
+                    full_response = chat_completion(
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt_for_llm}
+                        ],
+                        stream=False # Por enquanto, sem stream para simplificar
+                    )
+
+                    if full_response:
+                        message_placeholder.markdown(full_response)
+                        assistant_message_id = str(uuid.uuid4()) # Gera ID único para resposta
+                        assistant_message = {"role": "assistant", "content": full_response, "message_id": assistant_message_id}
+                        st.session_state.messages.append(assistant_message)
+                    else:
+                        fallback_msg = "Desculpe, não consegui obter uma resposta do modelo de IA."
+                        message_placeholder.markdown(fallback_msg)
+                        assistant_message_id = str(uuid.uuid4())
+                        assistant_message = {"role": "assistant", "content": fallback_msg, "message_id": assistant_message_id}
+                        st.session_state.messages.append(assistant_message)
+                        
+                    # Salva histórico APÓS adicionar a resposta do assistente
+                    save_json(st.session_state.messages, CHAT_HISTORY_FILE)
+                
+                except Exception as e:
+                    logger.exception("Erro ao chamar chat_completion no modo Chat com Schema:")
+                    error_msg = f"Ocorreu um erro ao processar sua pergunta: {e}"
+                    message_placeholder.markdown(error_msg)
+                    st.session_state.messages.append({"role": "assistant", "content": error_msg})
+
+
 # --- Ações Globais na Sidebar --- 
 st.sidebar.divider()
 st.sidebar.header("Ações Globais")
+
+# --- NOVO: Botão Salvar na Sidebar ---
+if st.sidebar.button("💾 Salvar Alterações nos Metadados", type="primary", key="save_metadata_sidebar"): # Key atualizada para clareza
+    logger.info("Tentativa de salvamento manual iniciada.")
+    # Comparar antes de salvar
+    new_desc_count, new_notes_count = 0, 0
+    has_changes = False
+    if 'initial_metadata' in st.session_state:
+        new_desc_count, new_notes_count = compare_metadata_changes(
+            st.session_state.initial_metadata,
+            st.session_state.metadata
+        )
+        if new_desc_count > 0 or new_notes_count > 0:
+            has_changes = True
+    else:
+        logger.warning("Estado inicial dos metadados não encontrado para comparação.")
+
+    if save_metadata(st.session_state.metadata, METADATA_FILE):
+        # Mensagem de sucesso com contadores
+        success_message = f"Metadados salvos com sucesso em `{METADATA_FILE}`!"
+        if new_desc_count > 0 or new_notes_count > 0:
+            success_message += f" ({new_desc_count} novas descrições, {new_notes_count} novas notas adicionadas nesta sessão)"
+        st.sidebar.success(success_message, icon="✅") # MUDANÇA: st.sidebar.success
+
+        try:
+            load_metadata.clear()
+            logger.info("Cache de metadados limpo após salvar.")
+            # Atualizar estado inicial após salvar com sucesso
+            st.session_state.initial_metadata = copy.deepcopy(st.session_state.metadata)
+            logger.info("Estado inicial dos metadados atualizado após salvar.")
+            # ATUALIZA O TEMPO DO ÚLTIMO SAVE
+            st.session_state.last_save_time = time.time()
+            logger.info(f"Tempo do último salvamento atualizado para: {st.session_state.last_save_time}")
+        except Exception as e:
+            logger.warning(f"Erro ao limpar cache ou atualizar estado inicial: {e}")
+    else:
+        st.sidebar.error("Falha ao salvar metadados.") # MUDANÇA: st.sidebar.error
+# --- FIM: Botão Salvar na Sidebar ---
+
 if st.sidebar.button("Recarregar Metadados do Arquivo", key="reload_metadata_sidebar"):
     load_metadata.clear() # Limpa o cache antes de carregar
     st.session_state.metadata = load_metadata(METADATA_FILE)
@@ -1953,6 +2494,17 @@ if st.sidebar.button("Aplicar Heurística Globalmente", key="apply_heuristics_bu
         st.sidebar.info(f"- Descrições preenchidas: {upd_desc}\n- Notas preenchidas: {upd_notes}")
         st.sidebar.warning("As alterações estão em memória. Salve os metadados para persistir.")
 # --- FIM Botão Heurística ---
+
+# --- NOVO: Botão para Preencher via Chaves FK->PK ---
+if st.sidebar.button("Preencher Descrições (Chaves FK->PK)", key="populate_keys_button", help="Preenche descrições vazias de colunas FK usando a descrição da PK referenciada."):
+    with st.spinner("Analisando chaves FK -> PK e preenchendo descrições..."):
+        updated_key_count = populate_descriptions_from_keys(st.session_state.metadata, technical_schema_data)
+        if updated_key_count > 0:
+            st.sidebar.success(f"{updated_key_count} descrições preenchidas via chaves FK->PK!", icon="🔑")
+            st.sidebar.warning("As alterações estão em memória. Salve os metadados para persistir.")
+        else:
+            st.sidebar.info("Nenhuma descrição de FK vazia pôde ser preenchida via chaves.")
+# --- FIM Botão Chaves --- 
 
 if st.sidebar.button("Executar Merge de Dados", key="run_merge_script"):
     script_path = os.path.join("scripts", "merge_schema_data.py")
@@ -1997,5 +2549,56 @@ if st.sidebar.button("Executar Merge de Dados", key="run_merge_script"):
             logger.exception("Erro ao executar subprocesso de merge")
 # --- FIM: Botão para Executar Merge ---
 
+# --- NOVO: Constante e Toggle Auto-Save ---
+st.sidebar.divider()
+st.sidebar.subheader("Configurações Extras")
+# Define a constante logo antes de usar
+AUTO_SAVE_INTERVAL_SECONDS = 300 # 5 minutos 
+st.sidebar.toggle(
+    "Habilitar Auto-Save (Intervalo)", 
+    key='auto_save_enabled', 
+    value=st.session_state.get('auto_save_enabled', False),
+    help=f"Salva automaticamente alterações pendentes a cada {AUTO_SAVE_INTERVAL_SECONDS // 60} minutos de interação."
+)
+# --- FIM: Toggle Auto-Save ---
+
 # Informação sobre como rodar
-st.sidebar.info("Para executar este app, use o comando: `streamlit run streamlit_app.py` no seu terminal.") 
+st.sidebar.info("Para executar este app, use o comando: `streamlit run streamlit_app.py` no seu terminal.")
+
+
+# --- LÓGICA DE AUTO-SAVE (Executa no final de cada rerun) ---
+if st.session_state.get('auto_save_enabled', False):
+    time_since_last_save = time.time() - st.session_state.get('last_save_time', 0)
+    
+    if time_since_last_save >= AUTO_SAVE_INTERVAL_SECONDS:
+        logger.info(f"Verificando auto-save. Tempo desde último save: {time_since_last_save:.2f}s")
+        # Verifica se há mudanças reais antes de salvar
+        auto_save_desc_count, auto_save_notes_count = 0, 0
+        auto_save_has_changes = False
+        if 'initial_metadata' in st.session_state:
+            auto_save_desc_count, auto_save_notes_count = compare_metadata_changes(
+                st.session_state.initial_metadata,
+                st.session_state.metadata
+            )
+            if auto_save_desc_count > 0 or auto_save_notes_count > 0:
+                auto_save_has_changes = True
+        
+        if auto_save_has_changes:
+            logger.info("Mudanças detectadas, iniciando auto-save...")
+            if save_metadata(st.session_state.metadata, METADATA_FILE):
+                try:
+                    load_metadata.clear()
+                    st.session_state.initial_metadata = copy.deepcopy(st.session_state.metadata)
+                    st.session_state.last_save_time = time.time()
+                    logger.info(f"Auto-save concluído com sucesso. Tempo atualizado: {st.session_state.last_save_time}")
+                    st.toast("Metadados salvos automaticamente.", icon="⏱️")
+                except Exception as e:
+                    logger.error(f"Erro durante pós-processamento do auto-save: {e}")
+                    # Não exibir toast de erro aqui para não ser muito intrusivo?
+                    # Talvez logar seja suficiente.
+            else:
+                logger.error("Falha no auto-save.")
+                # st.toast("Falha ao salvar automaticamente!", icon="❌") # Talvez intrusivo?
+        else:
+            logger.info("Auto-save verificado, mas sem alterações pendentes.")
+# --- FIM: LÓGICA DE AUTO-SAVE ---
