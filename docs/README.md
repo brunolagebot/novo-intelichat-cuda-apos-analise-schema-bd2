@@ -16,22 +16,48 @@ Esta aplicação Streamlit serve como uma ferramenta para visualizar, editar e e
 
 ## Geração do Schema e Embeddings
 
-A aplicação depende de arquivos JSON pré-gerados que contêm a estrutura do banco de dados e, opcionalmente, embeddings vetoriais. O processo de geração geralmente envolve os seguintes scripts (localizados no diretório `scripts/` ou similar):
+A aplicação depende de arquivos JSON pré-gerados que contêm a estrutura do banco de dados e, opcionalmente, embeddings vetoriais. O processo de geração geralmente envolve os seguintes scripts (localizados no diretório `scripts/`):
 
-1.  **`extract_schema.py`**: Conecta-se ao banco de dados Firebird e extrai a estrutura técnica (tabelas, views, colunas, tipos, constraints) para um arquivo JSON.
-2.  **`merge_schemas.py`** (Opcional, se houver múltiplos schemas): Combina múltiplos arquivos de schema extraídos em um único `combined_schema_details.json`.
-3.  **`generate_embeddings.py`** (Opcional): Carrega o `combined_schema_details.json`, gera embeddings vetoriais para os nomes e descrições (usando um modelo via Ollama, como `nomic-embed-text`), e salva o resultado em `schema_with_embeddings.json`. Este script também constrói e salva um índice FAISS (`faiss_column_index.idx`) para busca rápida.
+1.  **`extract_schema.py`**: Conecta-se ao banco de dados Firebird e extrai a **estrutura técnica detalhada** em etapas:
+    *   Busca informações básicas de Tabelas e Views.
+    *   Para cada Tabela/View:
+        *   Busca metadados de colunas (tipo, nulidade, default, desc. técnica).
+        *   Tenta buscar **10 valores de exemplo (amostra)** para cada coluna (pode falhar para GTTs ou por permissão, gerando um aviso).
+        *   Busca Constraints (PK, FK, Unique).
+        *   Busca todos os Índices (usuário, sistema, PK, FK, Unique) com seus propósitos.
+    *   Calcula contagens de referência FK.
+    *   Salva o resultado completo em **`data/enhanced_technical_schema.json`**.
+    *   Exibe uma **barra de progresso por Tabela/View** processada durante a execução.
+2.  **`merge_schema_data.py`**: Combina o schema técnico extraído (geralmente lê `data/technical_schema_details.json` por padrão, mas pode ser adaptado para usar o `enhanced_...` se necessário) com os metadados manuais de `data/schema_metadata.json`. Adiciona validações e contagens, salvando em `data/combined_schema_details.json`. **Este é o arquivo usado pela aplicação Streamlit principal.**
+3.  **`generate_embeddings.py`** (Opcional): Carrega o `combined_schema_details.json`, gera embeddings vetoriais, e salva o resultado em `schema_with_embeddings.json` e `faiss_column_index.idx`.
 
 ## Gerenciamento de Segredos (Secrets)
 
-A aplicação precisa de credenciais para acessar o banco de dados Firebird, principalmente para buscar dados de referência (como o timestamp da última NFS) e executar o script de contagem de linhas (`calculate_row_counts.py`).
+A aplicação Streamlit (`streamlit_app.py`) e os scripts auxiliares (como `extract_schema.py`, `calculate_row_counts.py`) precisam de credenciais para acessar o banco de dados Firebird.
 
-A senha do banco de dados **não** deve ser armazenada diretamente no código. A abordagem atual é:
+A senha do banco de dados **não** deve ser armazenada diretamente no código. A ordem de prioridade para obter as credenciais é:
 
-1.  **Ambiente de Deploy (Streamlit Cloud, etc.):** A senha deve ser configurada como um segredo do Streamlit (`st.secrets`). A aplicação tentará ler `st.secrets["database"]["password"]`.
-2.  **Ambiente Local:** A senha deve ser definida como uma variável de ambiente chamada `FIREBIRD_PASSWORD`. A aplicação usará `os.getenv("FIREBIRD_PASSWORD")` como fallback se o segredo do Streamlit não estiver disponível.
+1.  **Arquivo de Segredos do Streamlit (`.streamlit/secrets.toml`):** Este é o método preferido, especialmente para deploy. Crie um arquivo chamado `secrets.toml` dentro de uma pasta `.streamlit` na raiz do projeto. As credenciais devem estar na seção `[database]`:
+    ```toml
+    [database]
+    host = "localhost"
+    port = 3050
+    db_path = "C:/Caminho/Para/Seu/Banco.fdb" # Use barras normais ou escape as invertidas
+    user = "SYSDBA"
+    password = "sua_senha_aqui"
+    charset = "WIN1252"
+    ```
+    *Tanto a aplicação quanto os scripts tentarão ler deste arquivo primeiro.* Certifique-se de que este arquivo esteja no `.gitignore` para não commitar senhas.
 
-O caminho do banco (`db_path`), usuário (`db_user`) e charset (`db_charset`) podem ser definidos como constantes no código (`config.py` ou `db_utils.py`) ou, para maior flexibilidade, também podem ser gerenciados via segredos/variáveis de ambiente se necessário.
+2.  **Variáveis de Ambiente (ou arquivo `.env`):** Se o `secrets.toml` não for encontrado ou não contiver as chaves necessárias, a aplicação e os scripts tentarão ler as seguintes variáveis de ambiente (que podem ser definidas diretamente no sistema ou carregadas de um arquivo `.env` na raiz do projeto pela biblioteca `dotenv`):
+    *   `FIREBIRD_HOST`
+    *   `FIREBIRD_PORT`
+    *   `FIREBIRD_DB_PATH`
+    *   `FIREBIRD_USER`
+    *   `FIREBIRD_PASSWORD`
+    *   `FIREBIRD_CHARSET`
+
+3.  **Prompt Interativo (Apenas Scripts):** Se a senha (`FIREBIRD_PASSWORD`) não for encontrada nem no `secrets.toml` nem nas variáveis de ambiente, os scripts como `extract_schema.py` solicitarão que você a digite diretamente no terminal.
 
 ## Estrutura do Código
 
@@ -78,19 +104,24 @@ A aplicação utiliza o módulo `logging` padrão do Python para registrar infor
 
 A aplicação utiliza e gera diversos arquivos na pasta `data/`. É crucial entender o propósito e a origem de cada um:
 
-1.  **`technical_schema_details.json`**
-    *   **Origem:** Gerado pelo script `scripts/extract_schema.py`.
-    *   **Conteúdo:** Contém a **estrutura técnica bruta** extraída do banco de dados Firebird (tabelas, views, colunas, tipos de dados, constraints PK/FK, etc.). **Não contém metadados manuais.**
-    *   **Uso:** Input primário para o script de merge.
+1.  **`technical_schema_details.json`** (Legado/Básico)
+    *   **Origem:** Gerado por versões anteriores de `scripts/extract_schema.py` ou se o script atual for modificado para gerar este formato.
+    *   **Conteúdo:** Estrutura técnica básica (tabelas, colunas, tipos, constraints PK/FK). **Não inclui defaults ou índices.**
+    *   **Uso:** Pode ser usado como input para `merge_schema_data.py` se o schema aprimorado não for necessário ou desejado.
 
-2.  **`schema_metadata.json`**
+2.  **`enhanced_technical_schema.json`** (Recomendado)
+    *   **Origem:** Gerado pela versão atual de `scripts/extract_schema.py`.
+    *   **Conteúdo:** Contém a **estrutura técnica mais completa** extraída do banco, incluindo tabelas, views, colunas (com tipo, nulidade, default, descrição técnica, **amostra de valores - até 10**), constraints (PK, FK, Unique) e índices (com propósito). Inclui também contagem de referências FK (`fk_reference_counts`).
+    *   **Uso:** Fonte de dados técnicos mais rica. Pode ser usado (com adaptações) pelo script de merge ou para outras análises.
+
+3.  **`schema_metadata.json`**
     *   **Origem:** **Criado e atualizado pela interface da aplicação Streamlit.** Pode ser iniciado manually ou como cópia de um arquivo anterior.
     *   **Conteúdo:** Armazena os **metadados de negócio inseridos manualmente**: descrições de tabelas/views/colunas, notas de mapeamento de valores, contexto global, etc.
     *   **⚠️ IMPORTANTE:** Este arquivo é a **fonte da verdade para os dados inseridos manualmente**. Nenhum script deve **sobrescrever** este arquivo automaticamente. Scripts como `merge_schema_data.py` apenas **leem** este arquivo.
     *   ** बैकअप/संस्करण:** Para prevenir perda acidental de dados, **um backup automático é criado** na subpasta `data/metadata_backups/` cada vez que alterações são salvas pela interface. O nome do backup inclui a data e hora (timestamp), por exemplo: `schema_metadata_20231027_153000.json`. Isso permite recuperar versões anteriores se necessário.
 
-3.  **`combined_schema_details.json`**
-    *   **Origem:** Gerado pelo script `scripts/merge_schema_data.py`.
+4.  **`combined_schema_details.json`**
+    *   **Origem:** Gerado pelo script `scripts/merge_schema_data.py` (lendo um schema técnico e `schema_metadata.json`).
     *   **Conteúdo:** Resulta da **combinação** da estrutura técnica (`technical_schema_details.json`) com os metadados manuais (`schema_metadata.json`). Pode incluir informações adicionais calculadas durante o merge (ex: contagens de referência FK).
     *   **Metadados Internos (`_metadata_info`):** Este arquivo também contém uma chave especial `_metadata_info` no nível raiz, adicionada pelo script de merge, com as seguintes informações:
         *   `total_column_count`: Número total de colunas presentes neste arquivo combinado.
@@ -102,27 +133,27 @@ A aplicação utiliza e gera diversos arquivos na pasta `data/`. É crucial ente
         *   `missing_columns`: Dicionário mapeando tabelas/views para listas de colunas técnicas que não foram encontradas no combinado (se `validation_status` for 'Incomplete').
     *   **Uso:** Principal arquivo de dados **lido pela aplicação Streamlit** para exibir a estrutura combinada e alimentar as funcionalidades de edição e análise. É definido pela constante `config.TECHNICAL_SCHEMA_FILE` no código.
 
-4.  **`schema_with_embeddings.json`** (Opcional)
+5.  **`schema_with_embeddings.json`** (Opcional)
     *   **Origem:** Gerado pelo script `scripts/generate_embeddings.py`.
     *   **Conteúdo:** Uma cópia do `combined_schema_details.json` **enriquecida com vetores de embedding** para cada coluna (ou suas descrições).
     *   **Uso:** Carregado pela aplicação quando a opção "Usar Embeddings" está ativa, habilitando a busca por similaridade semântica e o contexto do chat. É definido pela constante `config.EMBEDDED_SCHEMA_FILE`. Devido ao tamanho (potencialmente >1GB), sua geração e uso são opcionais.
 
-5.  **`overview_counts.json`**
+6.  **`overview_counts.json`**
     *   **Origem:** Gerado e atualizado pelo script `scripts/calculate_row_counts.py` (executado manualmente pela interface).
     *   **Conteúdo:** Cache da contagem de linhas para cada tabela/view e o timestamp da contagem.
     *   **Uso:** Exibido na página "Visão Geral" para fornecer uma rápida noção do volume de dados sem consultar o banco a cada vez.
 
-6.  **`faiss_column_index.idx`** (Opcional)
+7.  **`faiss_column_index.idx`** (Opcional)
     *   **Origem:** Gerado pelo script `scripts/generate_embeddings.py` junto com `schema_with_embeddings.json`.
     *   **Conteúdo:** Índice binário FAISS otimizado para busca rápida por similaridade nos embeddings.
     *   **Uso:** Carregado em memória pela aplicação (se embeddings estiverem ativos) para acelerar a funcionalidade "Buscar Similares".
 
-7.  **`chat_history.json`** (Opcional)
+8.  **`chat_history.json`** (Opcional)
     *   **Origem:** Criado e atualizado pela funcionalidade "Chat com Schema".
     *   **Conteúdo:** Histórico das perguntas e respostas da interação com o chat.
     *   **Uso:** Persistir o histórico do chat entre sessões.
 
-8.  **`chat_feedback.json`** (Opcional)
+9.  **`chat_feedback.json`** (Opcional)
     *   **Origem:** Criado e atualizado pela funcionalidade "Chat com Schema" quando o usuário dá feedback.
     *   **Conteúdo:** Registro do feedback (Bom/Médio/Ruim) para cada mensagem do assistente.
     *   **Uso:** Coleta de dados para avaliação e melhoria futura do assistente de chat.

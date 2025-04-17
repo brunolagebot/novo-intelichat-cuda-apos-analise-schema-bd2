@@ -8,7 +8,7 @@ import datetime # NOVO: Para timestamp
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
-TECHNICAL_SCHEMA_FILE = 'data/technical_schema_details.json'
+TECHNICAL_SCHEMA_FILE = 'data/enhanced_technical_schema.json'
 METADATA_FILE = 'etapas-sem-gpu/schema_metadata.json' # Usando o arquivo fornecido
 OUTPUT_COMBINED_FILE = 'data/combined_schema_details.json'
 
@@ -152,7 +152,7 @@ if __name__ == "__main__":
     script_dir = os.path.dirname(__file__)
     data_dir = os.path.join(script_dir, '..', 'data')
     # Verifica se os caminhos em data/ existem, senão usa os originais
-    tech_file_path = os.path.join(data_dir, 'technical_schema_details.json')
+    tech_file_path = os.path.join(data_dir, 'enhanced_technical_schema.json')
     if not os.path.exists(tech_file_path):
         tech_file_path = TECHNICAL_SCHEMA_FILE # Usa o caminho antigo se não achar em data/
         

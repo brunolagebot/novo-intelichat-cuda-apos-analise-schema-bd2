@@ -22,7 +22,7 @@ import core.config as config # NOVO: Importa configurações da pasta core
 from core.data_loader import load_and_process_data, load_metadata, load_overview_counts, load_technical_schema
 # NOVO: Importa outras funções core (serão removidas/refatoradas depois)
 from core.ai_integration import generate_ai_description, build_faiss_index, get_query_embedding, handle_embedding_toggle
-from core.metadata_logic import get_type_explanation, find_existing_info, get_column_concept, apply_heuristics_globally, populate_descriptions_from_keys, compare_metadata_changes
+from core.metadata_logic import get_type_explanation, find_existing_info, get_column_concept, apply_heuristics_globally, populate_descriptions_from_keys, compare_metadata_changes, save_metadata
 from core.db_utils import fetch_latest_nfs_timestamp, fetch_sample_data
 from core.analysis import generate_documentation_overview, analyze_key_structure
 from ui.sidebar import display_sidebar # NOVO: Importa função da sidebar
@@ -188,7 +188,7 @@ if st.session_state.get('auto_save_enabled', False):
         
         if auto_save_has_changes:
             logger.info("Mudanças detectadas, iniciando auto-save...")
-            if save_metadata(st.session_state.metadata, METADATA_FILE):
+            if save_metadata(st.session_state.metadata, config.METADATA_FILE):
                 try:
                     load_metadata.clear()
                     st.session_state.initial_metadata = copy.deepcopy(st.session_state.metadata)
@@ -197,11 +197,8 @@ if st.session_state.get('auto_save_enabled', False):
                     st.toast("Metadados salvos automaticamente.", icon="⏱️")
                 except Exception as e:
                     logger.error(f"Erro durante pós-processamento do auto-save: {e}")
-                    # Não exibir toast de erro aqui para não ser muito intrusivo?
-                    # Talvez logar seja suficiente.
             else:
                 logger.error("Falha no auto-save.")
-                # st.toast("Falha ao salvar automaticamente!", icon="❌") # Talvez intrusivo?
         else:
             logger.info("Auto-save verificado, mas sem alterações pendentes.")
 # --- FIM: LÓGICA DE AUTO-SAVE ---
