@@ -190,7 +190,22 @@ def load_and_process_data():
     if 'db_user' not in st.session_state:
         st.session_state.db_user = config.DEFAULT_DB_USER
     if 'db_password' not in st.session_state:
-        st.session_state.db_password = os.getenv("FIREBIRD_PASSWORD", "")
+        # CORRIGIDO: Priorizar st.secrets e depois env var
+        try:
+            db_password_loaded = st.secrets.get("database", {}).get("password")
+            if not db_password_loaded:
+                db_password_loaded = os.getenv("FIREBIRD_PASSWORD")
+                if db_password_loaded:
+                    logger.info("Senha do DB carregada da variável de ambiente FIREBIRD_PASSWORD.")
+                else:
+                    logger.warning("Senha do DB não encontrada em st.secrets nem na env var FIREBIRD_PASSWORD.")
+                    db_password_loaded = "" # Ou None?
+            else:
+                logger.info("Senha do DB carregada de st.secrets.")
+            st.session_state.db_password = db_password_loaded
+        except Exception as e:
+            logger.error(f"Erro ao tentar carregar senha do DB de st.secrets/env var: {e}")
+            st.session_state.db_password = ""
     if 'db_charset' not in st.session_state:
         st.session_state.db_charset = config.DEFAULT_DB_CHARSET
     if 'latest_db_timestamp' not in st.session_state:
