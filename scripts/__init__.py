@@ -1,0 +1,1 @@
+# Este arquivo faz com que o Python trate o diretório 'scripts' como um pacote. 

@@ -1,4 +1,4 @@
-# Funções de análise estrutural
+# Funções de análise estrutural 
 
 import logging
 from collections import defaultdict

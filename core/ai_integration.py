@@ -5,6 +5,7 @@ import streamlit as st # Necessário para spinners, toasts, session_state, etc.
 import numpy as np
 import faiss
 import os # Necessário para handle_embedding_toggle verificar arquivo
+import torch # Adicionar import
 
 import core.config as config
 # TODO: Verificar se essas importações circulares/cruzadas serão um problema
@@ -20,28 +21,32 @@ logger = logging.getLogger(__name__)
 # TODO: Passar essas variáveis/funções como argumentos ou encontrar forma melhor?
 
 def generate_ai_description(prompt, OLLAMA_AVAILABLE, chat_completion):
-    """Chama a API Ollama para gerar uma descrição e limpa a resposta."""
+    """
+    Chama a API Ollama para gerar uma descrição.
+
+    Retorna:
+        str: A descrição gerada e limpa em caso de sucesso.
+        None: Em caso de falha (IA indisponível, resposta vazia, erro).
+              (Alternativa: levantar exceções para erros)
+    """
     if not OLLAMA_AVAILABLE:
-        st.warning("Funcionalidade de IA não disponível.") # UI Tightly coupled
+        logger.warning("Tentativa de usar IA sem Ollama disponível.")
         return None
-        
+
     logger.debug(f"Enviando prompt para IA: {prompt}")
     messages = [{"role": "user", "content": prompt}]
     try:
-        # UI Tightly coupled
-        with st.spinner("🧠 Pensando..."):
-            response = chat_completion(messages=messages, stream=False)
+        response = chat_completion(messages=messages, stream=False)
+
         if response:
             cleaned_response = response.strip().strip('"').strip('\'').strip()
             logger.debug(f"Resposta da IA (limpa): {cleaned_response}")
             return cleaned_response
         else:
             logger.warning("Falha ao obter descrição da IA (resposta vazia).")
-            st.toast("😕 A IA não retornou uma sugestão.") # UI Tightly coupled
             return None
     except Exception as e:
         logger.exception("Erro ao chamar a API Ollama:")
-        st.error(f"Erro ao contatar a IA: {e}") # UI Tightly coupled
         return None
 
 def get_query_embedding(text: str, OLLAMA_EMBEDDING_AVAILABLE, get_embedding) -> np.ndarray | None:
@@ -50,10 +55,8 @@ def get_query_embedding(text: str, OLLAMA_EMBEDDING_AVAILABLE, get_embedding) ->
         logger.warning("Tentativa de gerar embedding sem função disponível.")
         return None
     try:
-        # UI Tightly coupled
-        with st.spinner("Gerando embedding para a pergunta..."): 
-            embedding_list = get_embedding(text) # Chama a função externa
-        
+        embedding_list = get_embedding(text) # Chama a função externa
+
         if embedding_list and isinstance(embedding_list, list):
             embedding_np = np.array(embedding_list).astype('float32')
             if embedding_np.shape[0] == config.EMBEDDING_DIMENSION:
@@ -61,18 +64,88 @@ def get_query_embedding(text: str, OLLAMA_EMBEDDING_AVAILABLE, get_embedding) ->
                 return embedding_np
             else:
                 logger.error(f"Erro: Dimensão do embedding da query ({embedding_np.shape[0]}) diferente da esperada ({config.EMBEDDING_DIMENSION}).")
-                # UI Tightly coupled
-                st.toast(f"Erro na dimensão do embedding gerado pela IA ({embedding_np.shape[0]} vs {config.EMBEDDING_DIMENSION}).", icon="❌")
                 return None
         else:
             logger.error(f"Função get_embedding não retornou uma lista válida: {type(embedding_list)}")
-            # UI Tightly coupled
-            st.toast("Erro ao gerar embedding da pergunta (resposta inválida da IA).", icon="❌")
             return None
     except Exception as e:
         logger.exception("Erro ao chamar get_embedding:")
-        # UI Tightly coupled
-        st.toast(f"Erro ao gerar embedding da pergunta: {e}", icon="❌")
+        return None
+
+# --- Nova Função para Geração com Modelo Carregado Programaticamente ---
+
+# Definir constantes ou buscar do config.py se fizer sentido
+DEFAULT_MAX_NEW_TOKENS = 100
+DEFAULT_TEMPERATURE = 0.6
+DEFAULT_TOP_P = 0.9
+
+def generate_description_with_adapter(
+    prompt: str,
+    model, # Modelo carregado (base + adapter) via transformers/peft
+    tokenizer, # Tokenizer correspondente
+    max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
+    temperature: float = DEFAULT_TEMPERATURE,
+    top_p: float = DEFAULT_TOP_P
+) -> str | None:
+    """
+    Gera uma descrição usando um modelo (base + adapter) carregado programaticamente.
+
+    Args:
+        prompt: O prompt formatado para o modelo.
+        model: O objeto do modelo carregado (transformers/peft).
+        tokenizer: O objeto do tokenizer carregado.
+        max_new_tokens: Máximo de tokens a serem gerados.
+        temperature: Temperatura para amostragem.
+        top_p: Top-p (nucleus) para amostragem.
+
+    Returns:
+        str: A descrição gerada e limpa em caso de sucesso.
+        None: Em caso de erro durante a geração.
+    """
+    # Garantir que o modelo esteja no dispositivo correto (ex: GPU se disponível)
+    device = model.device
+    logger.debug(f"Gerando descrição com modelo no dispositivo: {device}")
+    logger.debug(f"Prompt para o modelo: {prompt}")
+
+    # Formato de Chat (assumindo Llama 3 Instruct)
+    # Importante: O formato DEVE corresponder ao que o modelo base espera
+    # e como o fine-tuning foi feito. Ajuste se necessário.
+    messages = [{"role": "user", "content": prompt}]
+    try:
+        # Aplica o template de chat do tokenizer
+        prompt_formatted = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        inputs = tokenizer(prompt_formatted, return_tensors="pt").to(device)
+
+        # Geração
+        # Usar torch.no_grad() para inferência mais eficiente
+        with torch.no_grad():
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                do_sample=True, # Necessário para temperature e top_p
+                pad_token_id=tokenizer.eos_token_id # Evita warnings
+            )
+
+        # Decodifica a resposta, pulando o prompt original
+        response_full = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        # Remove o prompt original da resposta completa
+        # Isso pode precisar de ajuste dependendo de como o tokenizer formata
+        prompt_length_in_response = len(tokenizer.decode(inputs['input_ids'][0], skip_special_tokens=True))
+        response_generated = response_full[prompt_length_in_response:].strip()
+
+        if response_generated:
+            # Limpeza básica (pode precisar de mais refinamento)
+            cleaned_response = response_generated.strip().strip('"').strip('\'').strip()
+            logger.debug(f"Resposta gerada (limpa): {cleaned_response}")
+            return cleaned_response
+        else:
+            logger.warning("Modelo não gerou resposta.")
+            return None
+
+    except Exception as e:
+        logger.exception(f"Erro durante a geração de texto com o modelo adaptado: {e}")
         return None
 
 # --- Funções FAISS --- #

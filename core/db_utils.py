@@ -1,4 +1,4 @@
-# Funções de interação com o banco de dados Firebird
+# Funções de interação com o banco de dados Firebird 
 
 import fdb
 import datetime

@@ -1,0 +1,10 @@
+# Modelfile para carregar o Llama 3 com o adaptador de schema
+# FROM llama3 # Comentado: Usando nome exato abaixo
+FROM meta-llama/Meta-Llama-3-8B-Instruct # Usando nome/caminho exato do adapter_config.json
+
+# Caminho RELATIVO da raiz do projeto para a pasta do adaptador
+ADAPTER ./results-llama3-8b-chat-schema-adapter
+
+# Opcional: Ajustar parâmetros ou template se necessário
+# PARAMETER temperature 0.6
+# TEMPLATE ... 

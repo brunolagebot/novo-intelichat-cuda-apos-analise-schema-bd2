@@ -178,27 +178,31 @@ if st.session_state.get('auto_save_enabled', False):
         # Verifica se há mudanças reais antes de salvar
         auto_save_desc_count, auto_save_notes_count = 0, 0
         auto_save_has_changes = False
-        if 'initial_metadata' in st.session_state:
+                if 'initial_metadata' in st.session_state:
+            try:
             auto_save_desc_count, auto_save_notes_count = compare_metadata_changes(
-                st.session_state.initial_metadata,
-                st.session_state.metadata
-            )
+                        st.session_state.initial_metadata,
+                        st.session_state.metadata
+                    )
             if auto_save_desc_count > 0 or auto_save_notes_count > 0:
                 auto_save_has_changes = True
+            except Exception as e:
+                logger.error(f"Erro ao comparar metadados para auto-save: {e}")
+                auto_save_has_changes = False
         
         if auto_save_has_changes:
             logger.info("Mudanças detectadas, iniciando auto-save...")
             if save_metadata(st.session_state.metadata, config.METADATA_FILE):
-                try:
-                    load_metadata.clear()
-                    st.session_state.initial_metadata = copy.deepcopy(st.session_state.metadata)
+                    try:
+                        load_metadata.clear()
+                        st.session_state.initial_metadata = copy.deepcopy(st.session_state.metadata)
                     st.session_state.last_save_time = time.time()
                     logger.info(f"Auto-save concluído com sucesso. Tempo atualizado: {st.session_state.last_save_time}")
                     st.toast("Metadados salvos automaticamente.", icon="⏱️")
-                except Exception as e:
-                    logger.error(f"Erro durante pós-processamento do auto-save: {e}")
-            else:
-                logger.error("Falha no auto-save.")
-        else:
-            logger.info("Auto-save verificado, mas sem alterações pendentes.")
+                    except Exception as e:
+                    logger.error(f"Erro durante pós-processamento do auto-save (limpeza de cache/atualização estado): {e}")
+                else:
+                logger.error("Falha no auto-save (função save_metadata retornou False).")
+    else:
+            logger.debug("Auto-save verificado, mas sem alterações pendentes ou erro na comparação.")
 # --- FIM: LÓGICA DE AUTO-SAVE ---

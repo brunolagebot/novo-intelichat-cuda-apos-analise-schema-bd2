@@ -1,11 +1,13 @@
 import json
 import os
 import logging
-import asyncio
-import aiohttp # Usar aiohttp para requisições assíncronas
 import time
 from dotenv import load_dotenv
-from tqdm.asyncio import tqdm # Usar tqdm.asyncio para barras de progresso assíncronas
+from tqdm import tqdm # Usar tqdm síncrono
+import torch # NOVO: Para verificar GPU
+from sentence_transformers import SentenceTransformer # NOVO
+import numpy as np # NOVO: Para embeddings numpy
+import faiss # NOVO: Para criar índice FAISS
 
 # Configuração básica de logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -16,14 +18,20 @@ load_dotenv()
 
 # --- Constantes ---
 INPUT_JSON_FILE = 'data/combined_schema_details.json'
-OUTPUT_JSON_FILE = 'data/schema_with_embeddings.json'
+# NOVO: Define o modelo Sentence Transformer
+EMBEDDING_MODEL_NAME = 'paraphrase-multilingual-mpnet-base-v2'
+# NOVO: Gerar nome curto para usar nos arquivos de saída
+MODEL_SHORT_NAME = "mpnet-multi-base-v2" # Simplificação manual
+OUTPUT_JSON_FILE = f'data/schema_embeddings_{MODEL_SHORT_NAME}.json' # Nome dinâmico
+OUTPUT_FAISS_INDEX_FILE = f'data/faiss_index_{MODEL_SHORT_NAME}.idx' # Nome dinâmico
 # Usa a variável específica para EMBEDDINGS
-OLLAMA_EMBEDDINGS_URL = os.getenv("OLLAMA_EMBEDDINGS_URL", "http://localhost:11434/api/embeddings")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
-MAX_RETRIES = 3
-RETRY_DELAY = 5 # Segundos
-CONCURRENT_REQUESTS = 20 # Número de requisições paralelas ao Ollama
-REQUEST_TIMEOUT = 60 # Timeout em segundos para cada requisição
+# OLLAMA_EMBEDDINGS_URL = os.getenv("OLLAMA_EMBEDDINGS_URL", "http://localhost:11434/api/embeddings")
+# EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
+# MAX_RETRIES = 3
+# RETRY_DELAY = 5 # Segundos
+# CONCURRENT_REQUESTS = 20 # Número de requisições paralelas ao Ollama
+# REQUEST_TIMEOUT = 60 # Timeout em segundos para cada requisição
+SENTENCE_TRANSFORMER_BATCH_SIZE = 64 # Ajustável dependendo da memória CPU/GPU
 
 def load_json_data(file_path):
     """Carrega dados de um arquivo JSON."""
@@ -42,67 +50,6 @@ def load_json_data(file_path):
     except Exception as e:
         logger.error(f"Erro inesperado ao carregar {file_path}: {e}")
         return None
-
-async def get_ollama_embedding(session: aiohttp.ClientSession, text_to_embed: str, semaphore: asyncio.Semaphore):
-    """Obtém o embedding de um texto usando a API do Ollama de forma assíncrona com retentativas e semáforo."""
-    if not text_to_embed or not text_to_embed.strip():
-        logger.warning("Texto vazio fornecido para embedding, retornando None.")
-        return None
-
-    payload = {
-        "model": EMBEDDING_MODEL,
-        "prompt": text_to_embed
-    }
-    headers = {'Content-Type': 'application/json'}
-    
-    async with semaphore: # Adquire o semáforo antes de fazer a requisição
-        for attempt in range(MAX_RETRIES):
-            try:
-                async with session.post(OLLAMA_EMBEDDINGS_URL, headers=headers, json=payload, timeout=REQUEST_TIMEOUT) as response:
-                    response.raise_for_status() # Levanta erro para status >= 400
-                    
-                    result = await response.json()
-                    if "embedding" in result and isinstance(result["embedding"], list):
-                        return result["embedding"]
-                    else:
-                        logger.error(f"Resposta inesperada da API Ollama: {result}")
-                        return None
-            except aiohttp.ClientConnectionError as e:
-                logger.error(f"Erro de conexão com Ollama em {OLLAMA_EMBEDDINGS_URL}: {e}")
-                if attempt < MAX_RETRIES - 1:
-                    logger.info(f"Tentando novamente em {RETRY_DELAY} segundos...")
-                    await asyncio.sleep(RETRY_DELAY)
-                else:
-                    logger.error("Máximo de tentativas atingido. Verifique se Ollama está em execução e acessível.")
-                    return None
-            except asyncio.TimeoutError:
-                logger.error(f"Timeout ao conectar com Ollama em {OLLAMA_EMBEDDINGS_URL}.")
-                if attempt < MAX_RETRIES - 1:
-                    logger.info(f"Tentando novamente em {RETRY_DELAY} segundos...")
-                    await asyncio.sleep(RETRY_DELAY)
-                else:
-                    return None
-            except aiohttp.ClientResponseError as e:
-                 logger.error(f"Erro HTTP {e.status} na requisição para Ollama: {e.message}")
-                 # Verifica se a mensagem indica que o modelo não foi encontrado
-                 if e.status == 404 and "model" in str(e.message).lower() and EMBEDDING_MODEL in str(e.message):
-                     logger.error(f"Parece que o modelo '{EMBEDDING_MODEL}' não está disponível no Ollama.")
-                     logger.error("Execute 'ollama list' ou 'ollama pull nomic-embed-text' para verificar/baixar.")
-                     return "MODEL_NOT_FOUND" # Sinalizador especial
-                 if attempt < MAX_RETRIES - 1:
-                     logger.info(f"Tentando novamente em {RETRY_DELAY} segundos...")
-                     await asyncio.sleep(RETRY_DELAY)
-                 else:
-                     return None
-            except aiohttp.ClientError as e: # Captura outras exceções do aiohttp
-                 logger.error(f"Erro do cliente aiohttp para Ollama: {e}")
-                 if attempt < MAX_RETRIES - 1:
-                     logger.info(f"Tentando novamente em {RETRY_DELAY} segundos...")
-                     await asyncio.sleep(RETRY_DELAY)
-                 else:
-                    return None
-    return None # Se todas as tentativas falharem
-
 
 def build_object_text(obj_name, obj_data):
     """Constrói o texto contextual para um objeto (tabela/view)."""
@@ -170,118 +117,141 @@ def save_json_data(data, file_path):
         logger.error(f"Erro inesperado ao salvar {file_path}: {e}")
         return False
 
-async def process_item(session, item_key, text, semaphore):
-    """Função auxiliar para processar um único item (objeto ou coluna) e retornar a chave e o embedding."""
-    embedding = await get_ollama_embedding(session, text, semaphore)
-    return item_key, embedding
+def save_faiss_index(index, file_path):
+    logger.info(f"Salvando índice FAISS em {file_path}...")
+    try:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        faiss.write_index(index, file_path)
+        logger.info(f"Índice FAISS com {index.ntotal} vetores salvo com sucesso.")
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao salvar índice FAISS em {file_path}: {e}", exc_info=True)
+        return False
 
-async def main():
-    """Função principal assíncrona para gerar embeddings."""
-    logger.info("--- Iniciando Geração de Embeddings (Paralela) ---")
-    
-    start_time = time.time()
+def main():
+    """Função principal síncrona para gerar embeddings com Sentence Transformers e criar índice FAISS."""
+    logger.info("--- Iniciando Geração de Embeddings (Sentence Transformers) e Índice FAISS ---")
+    logger.info(f"Usando modelo: {EMBEDDING_MODEL_NAME}")
+
+    overall_start_time = time.time()
+
+    # 1. Carregar dados
+    load_data_start = time.time()
     schema_data = load_json_data(INPUT_JSON_FILE)
     if schema_data is None:
-        return # Erro já logado
+        return
+    load_data_end = time.time()
+    logger.info(f"Tempo de carregamento do JSON: {load_data_end - load_data_start:.2f}s")
 
+    # 2. Preparar textos e mapeamento
+    prep_start_time = time.time()
+    texts_to_embed = []
+    # Lista para mapear índice na lista de textos de volta para (tipo, obj_name, col_index)
+    index_to_item_map = []
+
+    logger.info("Preparando textos para embedding...")
     objects_to_process = {k: v for k, v in schema_data.items() if isinstance(v, dict) and 'object_type' in v}
-    
-    items_to_embed = {}
-    # Coleta todos os textos a serem embedados
     for obj_name, obj_data in objects_to_process.items():
-        obj_text = build_object_text(obj_name, obj_data)
-        items_to_embed[(obj_name, None)] = obj_text # Chave: (obj_name, None) para objetos
+        # Texto para cada coluna (foco principal para similaridade)
         if 'columns' in obj_data:
             for i, col_data in enumerate(obj_data['columns']):
-                 col_text = build_column_text(obj_name, col_data)
-                 items_to_embed[(obj_name, i)] = col_text # Chave: (obj_name, col_index) para colunas
+                col_text = build_column_text(obj_name, col_data)
+                texts_to_embed.append(col_text)
+                index_to_item_map.append(('column', obj_name, i))
 
-    total_items = len(items_to_embed)
+    total_items = len(texts_to_embed)
     if total_items == 0:
-        logger.info("Nenhum item para processar encontrado no arquivo de entrada.")
+        logger.info("Nenhum texto de coluna para gerar embedding encontrado.")
+        return
+    logger.info(f"Total de textos de colunas para gerar embedding: {total_items}")
+    prep_end_time = time.time()
+    logger.info(f"Tempo de preparação dos textos: {prep_end_time - prep_start_time:.2f}s")
+
+    # 3. Carregar modelo Sentence Transformer
+    model_load_start = time.time()
+    logger.info(f"Carregando modelo Sentence Transformer: {EMBEDDING_MODEL_NAME}...")
+    # Tenta usar GPU se disponível
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    logger.info(f"Usando device: {device}")
+    try:
+        model = SentenceTransformer(EMBEDDING_MODEL_NAME, device=device)
+    except Exception as e:
+        logger.error(f"Falha ao carregar o modelo Sentence Transformer '{EMBEDDING_MODEL_NAME}': {e}")
+        logger.error("Verifique se a biblioteca 'sentence-transformers' está instalada e o nome do modelo está correto.")
+        return
+    model_load_end = time.time()
+    logger.info(f"Modelo carregado em: {model_load_end - model_load_start:.2f}s")
+
+    # 4. Gerar Embeddings em Batch
+    embed_gen_start = time.time()
+    logger.info(f"Gerando embeddings em batches de {SENTENCE_TRANSFORMER_BATCH_SIZE}...")
+    try:
+        embeddings = model.encode(
+            texts_to_embed,
+            batch_size=SENTENCE_TRANSFORMER_BATCH_SIZE,
+            show_progress_bar=True,
+            convert_to_numpy=True # Já converte para numpy array
+        )
+    except Exception as e:
+        logger.error(f"Erro durante a geração de embeddings: {e}", exc_info=True)
+        return
+    embed_gen_end = time.time()
+    logger.info(f"Embeddings gerados em: {embed_gen_end - embed_gen_start:.2f}s")
+
+    if len(embeddings) != total_items:
+        logger.error(f"Erro: Número de embeddings gerados ({len(embeddings)}) diferente do número de textos ({total_items}). Abortando.")
         return
 
-    logger.info(f"Modelo de Embedding: {EMBEDDING_MODEL}")
-    logger.info(f"API Ollama: {OLLAMA_EMBEDDINGS_URL}")
-    logger.info(f"Nível de Concorrência: {CONCURRENT_REQUESTS}")
-    logger.info(f"Total de itens (objetos + colunas) para gerar embedding: {total_items}")
+    # 5. Atualizar o dicionário do schema com embeddings
+    update_start_time = time.time()
+    logger.info("Atualizando dicionário de schema com os embeddings gerados...")
+    for i, (item_type, obj_name, col_index) in enumerate(index_to_item_map):
+        if item_type == 'column':
+            try:
+                # Garante que o embedding é uma lista de floats padrão para JSON
+                schema_data[obj_name]['columns'][col_index]['embedding'] = embeddings[i].tolist()
+            except (KeyError, IndexError) as e:
+                logger.warning(f"Não foi possível encontrar/atualizar item {item_type} {obj_name} col_idx {col_index} no schema_data: {e}")
+        # elif item_type == 'object': # Se decidirmos embedar objetos também
+        #     try:
+        #         schema_data[obj_name]['embedding'] = embeddings[i].tolist()
+        #     except KeyError as e:
+        #          logger.warning(f"Não foi possível encontrar/atualizar item {item_type} {obj_name} no schema_data: {e}")
+    update_end_time = time.time()
+    logger.info(f"Dicionário atualizado em: {update_end_time - update_start_time:.2f}s")
 
-    processed_count = 0
-    error_count = 0
-    model_not_found_flag = False
+    # 6. Salvar JSON com embeddings
+    save_json_start = time.time()
+    if not save_json_data(schema_data, OUTPUT_JSON_FILE):
+        logger.error("Falha ao salvar o arquivo JSON com embeddings. Processo interrompido.")
+        return
+    save_json_end = time.time()
+    logger.info(f"Tempo para salvar JSON: {save_json_end - save_json_start:.2f}s")
 
-    semaphore = asyncio.Semaphore(CONCURRENT_REQUESTS) # Cria o semáforo
-    tasks = []
-    results_dict = {}
-
-    async with aiohttp.ClientSession() as session: # Cria uma única sessão
-        # Cria as tarefas
-        for item_key, text in items_to_embed.items():
-            tasks.append(process_item(session, item_key, text, semaphore))
-
-        # Executa as tarefas concorrentemente e mostra progresso
-        logger.info("Iniciando requisições paralelas ao Ollama...")
-        results = []
-        for future in tqdm(asyncio.as_completed(tasks), total=total_items, desc="Gerando Embeddings", unit="item"):
-            result = await future
-            results.append(result)
-            item_key, embedding = result
-            if embedding == "MODEL_NOT_FOUND":
-                model_not_found_flag = True
-                # Idealmente, cancelaríamos as tarefas restantes, mas gather trata isso
-                # logger.warning("Modelo não encontrado, interrompendo...")
-                # Não podemos usar break aqui diretamente com as_completed
-            elif embedding is not None:
-                results_dict[item_key] = embedding
-                processed_count += 1
-            else:
-                # Mesmo que tenha erro, precisamos registrar para saber que foi processado
-                error_count += 1
-                results_dict[item_key] = None # Marcar que houve erro
-
-    end_time = time.time()
-    logger.info(f"Tempo de processamento dos embeddings: {end_time - start_time:.2f} segundos")
-
-    # Atualiza o schema_data com os resultados
-    if not model_not_found_flag:
-        logger.info("Atualizando dicionário de schema com os embeddings gerados...")
-        for (obj_name, col_index), embedding in results_dict.items():
-             if obj_name in schema_data:
-                 if col_index is None: # É um objeto
-                     if embedding:
-                        schema_data[obj_name]['embedding'] = embedding
-                     elif 'embedding' in schema_data[obj_name]: # Remove embedding antigo se houve erro
-                         del schema_data[obj_name]['embedding']
-                 else: # É uma coluna
-                    if 'columns' in schema_data[obj_name] and col_index < len(schema_data[obj_name]['columns']):
-                        if embedding:
-                            schema_data[obj_name]['columns'][col_index]['embedding'] = embedding
-                        elif 'embedding' in schema_data[obj_name]['columns'][col_index]: # Remove embedding antigo se houve erro
-                            del schema_data[obj_name]['columns'][col_index]['embedding']
-                    else:
-                         logger.warning(f"Índice de coluna {col_index} inválido para objeto {obj_name} ao atualizar resultados.")
-             else:
-                logger.warning(f"Objeto {obj_name} não encontrado no schema_data ao atualizar resultados.")
-
-    logger.info("--- Geração de Embeddings Concluída ---")
-    logger.info(f"Itens processados com sucesso: {processed_count}")
-    logger.info(f"Erros durante o processamento: {error_count}")
-
-    if model_not_found_flag:
-         logger.error(f"Processo interrompido pois o modelo '{EMBEDDING_MODEL}' não foi encontrado no Ollama.")
-         logger.error("Nenhum arquivo de saída foi gerado ou atualizado.")
-    elif error_count > 0:
-         logger.warning("Houveram erros. O arquivo de saída conterá embeddings apenas para os itens processados com sucesso.")
-         if save_json_data(schema_data, OUTPUT_JSON_FILE):
-             logger.info(f"Arquivo parcialmente preenchido salvo em {OUTPUT_JSON_FILE}")
-         else:
-             logger.error("Falha ao salvar o arquivo JSON de saída.")
-    elif processed_count > 0:
-        if save_json_data(schema_data, OUTPUT_JSON_FILE):
-            logger.info(f"Arquivo com embeddings salvo com sucesso em {OUTPUT_JSON_FILE}")
+    # 7. Criar e Salvar Índice FAISS (Apenas com embeddings de colunas)
+    faiss_build_start = time.time()
+    try:
+        dimension = embeddings.shape[1] # Pega a dimensão do primeiro embedding gerado
+        logger.info(f"Criando índice FAISS (IndexFlatL2) com dimensão {dimension}...")
+        # Usar IndexFlatL2 para busca exata por distância Euclidiana (comum para Sentence Transformers)
+        # Se precisar de L2 normalizado (similaridade cosseno), normalize os embeddings antes de adicionar
+        # embeddings_normalized = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
+        # index = faiss.IndexFlatIP(dimension) # IP = Inner Product (similaridade cosseno)
+        # index.add(embeddings_normalized)
+        index = faiss.IndexFlatL2(dimension)
+        index.add(embeddings)
+        logger.info(f"Índice FAISS criado com {index.ntotal} vetores.")
+        if save_faiss_index(index, OUTPUT_FAISS_INDEX_FILE):
+            logger.info("Índice FAISS salvo com sucesso.")
         else:
-            logger.error("Falha ao salvar o arquivo JSON de saída.")
-    # Não precisa de 'else' para processed_count == 0, pois já foi tratado no início.
+            logger.error("Falha ao salvar o índice FAISS.")
+    except Exception as e:
+        logger.error(f"Erro ao criar ou salvar índice FAISS: {e}", exc_info=True)
+    faiss_build_end = time.time()
+    logger.info(f"Tempo para criar e salvar FAISS: {faiss_build_end - faiss_build_start:.2f}s")
+
+    overall_end_time = time.time()
+    logger.info(f"--- Processo Concluído em {overall_end_time - overall_start_time:.2f} segundos ---")
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    main() 
