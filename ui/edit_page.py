@@ -11,23 +11,26 @@ import pandas as pd
 import copy
 import time
 import textwrap # Para formatar prompts
+import json
+import fdb
 
-# Importações de módulos core
-import core.config as config
-from core.metadata_logic import (
+# Importações de módulos core e utils
+import src.core.config as config
+from src.core.metadata_logic import (
     get_type_explanation,
     find_existing_info,
     get_column_concept,
     save_metadata,
     compare_metadata_changes
 )
-from core.data_loader import load_metadata
-from core.ai_integration import (
+from src.core.data_loader import load_metadata
+from src.core.ai_integration import (
     generate_ai_description,
-    find_similar_columns
+    find_similar_columns,
+    get_query_embedding,
     # OLLAMA_AVAILABLE e chat_completion são passados como argumentos
 )
-from core.db_utils import fetch_sample_data
+from src.core.db_utils import fetch_sample_data
 # Funções como populate_descriptions_from_keys, apply_heuristics_globally são chamadas pela sidebar
 
 logger = logging.getLogger(__name__)

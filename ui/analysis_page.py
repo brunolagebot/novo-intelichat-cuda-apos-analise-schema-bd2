@@ -5,7 +5,7 @@ import pandas as pd
 import logging
 
 # Importações de módulos core
-import core.config as config
+import src.core.config as config
 
 logger = logging.getLogger(__name__)
 

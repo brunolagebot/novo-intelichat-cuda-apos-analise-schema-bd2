@@ -6,9 +6,10 @@ import os
 import json
 from collections import OrderedDict
 import streamlit as st # TODO: Refatorar para remover dependência do Streamlit (ex: st.error em save_metadata)
-import core.config as config
 import shutil # NOVO: Para copiar arquivos
 import datetime # NOVO: Para timestamp no nome do backup
+import pandas as pd
+import src.core.config as config
 
 logger = logging.getLogger(__name__)
 

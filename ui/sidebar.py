@@ -10,11 +10,11 @@ import logging
 import copy # Para deepcopy do estado inicial no reload
 
 # Importações de módulos core
-import core.config as config
-from core.db_utils import fetch_latest_nfs_timestamp
-from core.ai_integration import handle_embedding_toggle # Assumindo que esta função pode ser chamada diretamente
-from core.metadata_logic import save_metadata, apply_heuristics_globally, populate_descriptions_from_keys, compare_metadata_changes
-from core.data_loader import load_metadata, load_technical_schema # Para reload e merge
+import src.core.config as config
+from src.core.db_utils import fetch_latest_nfs_timestamp
+from src.core.ai_integration import handle_embedding_toggle # Assumindo que esta função pode ser chamada diretamente
+from src.core.metadata_logic import save_metadata, apply_heuristics_globally, populate_descriptions_from_keys, compare_metadata_changes
+from src.core.data_loader import load_metadata, load_technical_schema # Para reload e merge
 
 logger = logging.getLogger(__name__)
 

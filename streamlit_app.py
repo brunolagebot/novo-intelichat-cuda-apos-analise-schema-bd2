@@ -17,14 +17,14 @@ import time # NOVO: Para medir o tempo
 import argparse # NOVO
 import uuid # NOVO: Para IDs de mensagem
 from src.utils.json_helpers import load_json, save_json # NOVO: Importa funções auxiliares
-import core.config as config # NOVO: Importa configurações da pasta core
+import src.core.config as config # ATUALIZADO: Importa configurações da pasta core
 # NOVO: Importa funções de carregamento
-from core.data_loader import load_and_process_data, load_metadata, load_overview_counts, load_technical_schema
+from src.core.data_loader import load_and_process_data, load_metadata, load_overview_counts, load_technical_schema
 # NOVO: Importa outras funções core (serão removidas/refatoradas depois)
-from core.ai_integration import generate_ai_description, build_faiss_index, get_query_embedding, handle_embedding_toggle
-from core.metadata_logic import get_type_explanation, find_existing_info, get_column_concept, apply_heuristics_globally, populate_descriptions_from_keys, compare_metadata_changes, save_metadata
-from core.db_utils import fetch_latest_nfs_timestamp, fetch_sample_data
-from core.analysis import generate_documentation_overview, analyze_key_structure
+from src.core.ai_integration import generate_ai_description, build_faiss_index, get_query_embedding, handle_embedding_toggle
+from src.core.metadata_logic import get_type_explanation, find_existing_info, get_column_concept, apply_heuristics_globally, populate_descriptions_from_keys, compare_metadata_changes, save_metadata
+from src.core.db_utils import fetch_latest_nfs_timestamp, fetch_sample_data
+from src.core.analysis import generate_documentation_overview, analyze_key_structure
 from ui.sidebar import display_sidebar # NOVO: Importa função da sidebar
 from ui.overview_page import display_overview_page # NOVO: Importa função Visão Geral
 from ui.edit_page import display_edit_page # NOVO: Importa função Editar Metadados
@@ -32,7 +32,7 @@ from ui.analysis_page import display_analysis_page # NOVO: Importa função Aná
 from ui.chat_page import display_chat_page # NOVO: Importa função Chat
 
 # NOVO: Configura o logging ANTES de qualquer outra coisa
-from core.logging_config import setup_logging
+from src.core.logging_config import setup_logging # ATUALIZADO
 setup_logging()
 
 # O logger agora será configurado pela função acima
@@ -172,37 +172,42 @@ elif app_mode == "Chat com Schema":
 # Mantém a lógica de Auto-Save aqui, pois é global para o app
 if st.session_state.get('auto_save_enabled', False):
     time_since_last_save = time.time() - st.session_state.get('last_save_time', 0)
-    
+
     if time_since_last_save >= config.AUTO_SAVE_INTERVAL_SECONDS:
         logger.info(f"Verificando auto-save. Tempo desde último save: {time_since_last_save:.2f}s")
         # Verifica se há mudanças reais antes de salvar
         auto_save_desc_count, auto_save_notes_count = 0, 0
         auto_save_has_changes = False
-                if 'initial_metadata' in st.session_state:
+        if 'initial_metadata' in st.session_state:
             try:
-            auto_save_desc_count, auto_save_notes_count = compare_metadata_changes(
-                        st.session_state.initial_metadata,
-                        st.session_state.metadata
-                    )
-            if auto_save_desc_count > 0 or auto_save_notes_count > 0:
-                auto_save_has_changes = True
+                auto_save_desc_count, auto_save_notes_count = compare_metadata_changes(
+                    st.session_state.initial_metadata,
+                    st.session_state.metadata
+                )
+                if auto_save_desc_count > 0 or auto_save_notes_count > 0:
+                    auto_save_has_changes = True
             except Exception as e:
                 logger.error(f"Erro ao comparar metadados para auto-save: {e}")
                 auto_save_has_changes = False
-        
+        else:
+            logger.warning("initial_metadata não encontrado no estado da sessão. Auto-save não pode verificar mudanças.")
+            auto_save_has_changes = False
+
         if auto_save_has_changes:
             logger.info("Mudanças detectadas, iniciando auto-save...")
             if save_metadata(st.session_state.metadata, config.METADATA_FILE):
-                    try:
-                        load_metadata.clear()
-                        st.session_state.initial_metadata = copy.deepcopy(st.session_state.metadata)
+                try:
+                    # Limpar cache e atualizar estado após salvar
+                    load_metadata.clear()
+                    st.session_state.initial_metadata = copy.deepcopy(st.session_state.metadata)
                     st.session_state.last_save_time = time.time()
                     logger.info(f"Auto-save concluído com sucesso. Tempo atualizado: {st.session_state.last_save_time}")
                     st.toast("Metadados salvos automaticamente.", icon="⏱️")
-                    except Exception as e:
+                except Exception as e:
                     logger.error(f"Erro durante pós-processamento do auto-save (limpeza de cache/atualização estado): {e}")
-                else:
+            else:
                 logger.error("Falha no auto-save (função save_metadata retornou False).")
-    else:
+        else:
             logger.debug("Auto-save verificado, mas sem alterações pendentes ou erro na comparação.")
+
 # --- FIM: LÓGICA DE AUTO-SAVE ---

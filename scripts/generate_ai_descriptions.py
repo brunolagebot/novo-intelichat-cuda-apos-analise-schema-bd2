@@ -13,23 +13,23 @@ import faiss # NOVO: Para carregar índice FAISS
 import numpy as np # NOVO: Para manipular embeddings
 
 # --- NOVO: Adiciona a raiz do projeto ao sys.path ---
-# Isso permite que o script encontre módulos como 'core'
+# Isso permite que o script encontre módulos como 'src.core'
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 # --- FIM NOVO ---
 
 # Importar funções utilitárias e de geração
-from core.utils import load_json_safe
-from core.ai_integration import generate_description_with_adapter
-from core.logging_config import setup_logging
+from src.core.utils import load_json_safe
+from src.core.ai_integration import generate_description_with_adapter
+from src.core.logging_config import setup_logging
 
 # Configurar logging (usando a função centralizada)
 setup_logging()
 logger = logging.getLogger(__name__)
 
 # --- Constantes e Configuração --- #
-# TODO: Mover para core/config.py se apropriado
+# TODO: Mover para src/core/config.py se apropriado
 BASE_MODEL_NAME = "meta-llama/Meta-Llama-3-8B-Instruct"
 ADAPTER_PATH = "./results-llama3-8b-chat-schema-adapter"
 TECHNICAL_SCHEMA_FILE = "data/enhanced_technical_schema.json"
@@ -284,6 +284,16 @@ def main():
         combined_schema = {}
     logger.info(f"Schema combinado carregado em: {comb_schema_end - comb_schema_start:.2f}s")
 
+    # NOVO: Carregar contagens de linhas
+    counts_load_start = time.perf_counter()
+    logger.info("Carregando contagens de linhas de data/overview_counts.json...")
+    row_counts = load_json_safe(os.path.join(project_root, 'data', 'overview_counts.json'))
+    counts_load_end = time.perf_counter()
+    if not row_counts:
+        logger.warning("Arquivo data/overview_counts.json não encontrado ou inválido. Não será possível pular objetos vazios.")
+        row_counts = {} # Define como dict vazio para evitar erros
+    logger.info(f"Contagens de linhas carregadas em: {counts_load_end - counts_load_start:.2f}s")
+
     # Carregar FAISS e Embeddings se ativado
     faiss_index = None
     index_to_column_map = []
@@ -311,10 +321,20 @@ def main():
 
     # Iterar e gerar descrições
     items_to_process = []
+    skipped_zero_rows_objects_count = 0
+    logger.info("Preparando lista de itens para processar (verificando contagem de linhas)...")
+    prep_items_start = time.perf_counter()
     for obj_name, obj_data in technical_schema.items():
         # Ignora metadados internos como fk_reference_counts
         if not isinstance(obj_data, dict) or 'object_type' not in obj_data:
             continue
+
+        # NOVO: Pular objeto se a contagem de linhas for 0
+        object_row_count = row_counts.get(obj_name, {}).get('count', -1) # Pega contagem, -1 se não existir
+        if object_row_count == 0:
+            logger.debug(f"Pulando objeto '{obj_name}' (contagem de linhas = 0).")
+            skipped_zero_rows_objects_count += 1
+            continue # Pula para o próximo objeto
 
         obj_type = obj_data['object_type']
 
@@ -526,6 +546,7 @@ def main():
     logger.info(f"--- Resumo da Execução ---")
     logger.info(f"Novas descrições geradas: {generated_count}")
     logger.info(f"Prompts enriquecidos com similaridade: {enriched_prompt_count}")
+    logger.info(f"Itens pulados (objetos com 0 linhas): {skipped_zero_rows_objects_count}")
     logger.info(f"Itens pulados (desc. manual existente): {skipped_manual_count}")
     logger.info(f"Itens pulados (desc. IA existente): {skipped_ai_count}")
     logger.info(f"Itens pulados (amostra vazia): {skipped_empty_sample_count}")

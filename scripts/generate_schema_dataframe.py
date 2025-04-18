@@ -5,13 +5,13 @@ import argparse
 import logging
 import sys
 
-# Adiciona o diretório raiz ao sys.path para encontrar o módulo core
-script_dir = os.path.dirname(__file__)
-project_root = os.path.abspath(os.path.join(script_dir, '..'))
-sys.path.insert(0, project_root)
+# Adiciona a raiz do projeto ao sys.path para encontrar 'src'
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-from core.dataframe_generator import generate_schema_dataframe
-from core.utils import load_json_safe # Reutilizando load_json_safe se existir em utils
+from src.core.dataframe_generator import generate_schema_dataframe
+from src.core.utils import load_json_safe # Reutilizando load_json_safe se existir em utils
                                        # Se não existir, precisaria ser copiado/adaptado aqui ou no generator
 
 # Configuração básica de logging

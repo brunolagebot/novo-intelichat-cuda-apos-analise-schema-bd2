@@ -7,11 +7,11 @@ import faiss
 import os # Necessário para handle_embedding_toggle verificar arquivo
 import torch # Adicionar import
 
-import core.config as config
+import src.core.config as config
 # TODO: Verificar se essas importações circulares/cruzadas serão um problema
 # Talvez load_technical_schema deva estar em data_loader e as outras duas em analysis?
-# from core.data_loader import load_technical_schema # REMOVIDA importação de nível superior
-from core.analysis import analyze_key_structure
+# from src.core.data_loader import load_technical_schema # REMOVIDA importação de nível superior
+from src.core.analysis import analyze_key_structure
 
 logger = logging.getLogger(__name__)
 
@@ -245,7 +245,7 @@ def find_similar_columns(faiss_index, schema_data, index_to_key_map, target_embe
 def handle_embedding_toggle():
     """Callback para o toggle 'Usar Embeddings'. Carrega/descarrega o schema com embeddings."""
     # Importa a função necessária AQUI dentro
-    from core.data_loader import load_technical_schema
+    from src.core.data_loader import load_technical_schema
     
     use_embeddings = st.session_state.get('use_embeddings', False)
     logger.info(f"Toggle 'Usar Embeddings' mudou para: {use_embeddings}")

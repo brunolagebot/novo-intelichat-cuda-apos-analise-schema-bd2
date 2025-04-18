@@ -10,9 +10,10 @@ import copy
 import numpy as np # Necessário para build_faiss_index
 
 # Importar de outros módulos core
-import core.config as config
-from core.ai_integration import build_faiss_index # Será movido eventualmente?
-from core.analysis import analyze_key_structure # Será movido eventualmente?
+import src.core.config as config
+from src.core.ai_integration import build_faiss_index # Será movido eventualmente?
+from src.core.analysis import analyze_key_structure # Será movido eventualmente?
+from src.utils.json_helpers import load_json # Mantém
 
 logger = logging.getLogger(__name__)
 

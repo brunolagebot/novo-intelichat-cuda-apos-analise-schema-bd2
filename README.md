@@ -209,4 +209,82 @@ O `overview_counts.json` é gerado separadamente por `calculate_row_counts.py`. 
 *   **fdb:** Driver Python para conexão com bancos de dados Firebird.
 *   **Ollama:** Biblioteca cliente para interagir com a API do Ollama (modelos de linguagem).
 *   **FAISS:** Biblioteca para busca eficiente por similaridade em vetores (embeddings).
-*   **NumPy:** Manipulação de arrays numéricos (usado com FAISS e embeddings). 
+*   **NumPy:** Manipulação de arrays numéricos (usado com FAISS e embeddings).
+
+## Estrutura do Projeto
+
+```
+Novo/\
+├── .streamlit/                 # Configurações e segredos do Streamlit\
+│   └── secrets.toml\
+├── data/                       # Arquivos de dados (schemas, metadados, embeddings, etc.)\
+│   └── ...\
+├── docs/                       # Documentação do projeto\
+│   └── ROADMAP.md\
+├── scripts/                    # Scripts Python para tarefas batch/automação\
+│   ├── __init__.py\
+│   └── ... (extract_schema, generate_*, merge_*, etc.)\
+├── src/                        # Código fonte principal da aplicação\
+│   ├── __init__.py\
+│   ├── core/                   # Lógica central da aplicação\
+│   │   ├── __init__.py\
+│   │   ├── ai_integration.py   # Integração IA (Ollama, OpenAI, FAISS)\
+│   │   ├── data_loader.py      # Carregamento de dados\
+│   │   ├── metadata_logic.py   # Lógica de metadados editáveis\
+│   │   └── ... (config.py, analysis.py, db_utils.py, etc. - a verificar)\
+│   ├── ollama_integration/     # Integração específica com Ollama\
+│   │   └── ...\
+│   └── utils/                  # Utilitários gerais\
+│       └── json_helpers.py\
+├── tests/                      # Testes automatizados\
+│   └── ...\
+├── ui/                         # Módulos da interface Streamlit\
+│   ├── __init__.py\
+│   ├── analysis_page.py\
+│   ├── chat_page.py\
+│   ├── edit_page.py\
+│   ├── main_page.py\
+│   ├── overview_page.py\
+│   ├── PAGES_DOC.md\
+│   └── sidebar.py\
+├── .gitignore                  # Arquivos ignorados pelo Git\
+├── README.md                   # Este arquivo\
+├── requirements.txt            # Dependências Python\
+└── streamlit_app.py            # Ponto de entrada da aplicação Streamlit\
+```
+
+## Configuração
+
+*   Clonar o repositório.\
+*   Criar e ativar um ambiente virtual Python (ex: `python -m venv .venv`, `source .venv/bin/activate` ou `.\venv\Scripts\activate`).\
+*   Instalar dependências: `pip install -r requirements.txt`.\
+*   Configurar `secrets.toml` em `.streamlit/` com as chaves de API necessárias (ex: OpenAI).\
+*   Configurar variáveis de ambiente (se aplicável, ex: `FIREBIRD_PASSWORD`).\
+*   Instalar e configurar o servidor Ollama (se for usar IA local):\
+    *   Baixar e instalar Ollama: [https://ollama.com/](https://ollama.com/)\
+    *   Baixar os modelos necessários (ex: `ollama pull llama3`, `ollama pull nomic-embed-text`).\
+    *   Garantir que o servidor Ollama esteja em execução.\
+
+## Como Usar
+
+### Aplicação Streamlit
+
+Para iniciar a interface web principal:\
+
+```bash\
+streamlit run streamlit_app.py\
+```\
+
+A aplicação abrirá no seu navegador padrão.\
+
+### Scripts
+
+Os scripts na pasta `scripts/` podem ser executados individualmente para tarefas específicas. Consulte `scripts/SCRIPT_DOCUMENTATION.md` (se existir) ou o código de cada script para detalhes sobre seus argumentos e funcionalidades.\
+
+Exemplo:\
+
+```bash\
+python scripts/generate-ai-description-openia.py --max_items 10\
+```\
+
+<!-- Adicionar mais seções conforme necessário: Contribuição, Licença, etc. --> 

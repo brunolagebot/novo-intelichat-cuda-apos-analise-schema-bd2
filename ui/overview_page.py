@@ -6,11 +6,12 @@ import sys
 import subprocess
 import logging
 import datetime # NOVO: Para formatar timestamp
+import pandas as pd
 
-# Importações de módulos core
-import core.config as config
-from core.analysis import generate_documentation_overview
-from core.data_loader import load_overview_counts
+# Importações de módulos core e utils
+import src.core.config as config
+from src.core.analysis import generate_documentation_overview
+from src.core.data_loader import load_overview_counts
 
 logger = logging.getLogger(__name__)
 
