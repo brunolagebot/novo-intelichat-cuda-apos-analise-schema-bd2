@@ -127,7 +127,7 @@ def build_prompt(obj_type, obj_name, col_data=None, similar_descriptions=None):
             prompt += "\n".join(similar_descriptions)
             prompt += "\n"
 
-        prompt += f"\nTarefa: Gere uma descrição de negócio concisa e clara para a coluna \"{col_data.get('name', 'N/A')}\" da tabela/view \"{obj_name}\". Explique seu propósito principal no contexto do negócio."
+        prompt += f"\nTarefa: Gere uma descrição de negócio concisa e clara para a coluna \"{col_data.get('name', 'N/A')}\" da tabela/view \"{obj_name}\", em Português brasileiro (pt-br). Explique seu propósito principal no contexto do negócio."
 
     else: # É uma tabela/view
         # TODO: Aprimorar prompt para tabelas (usar lista de colunas, desc técnica da tabela?)
@@ -137,7 +137,7 @@ def build_prompt(obj_type, obj_name, col_data=None, similar_descriptions=None):
         # tech_desc_table = ... # Buscar descrição técnica da tabela do schema
         # if tech_desc_table:
         #     prompt += f"- Descrição Técnica: {tech_desc_table}\n"
-        prompt += f"\nTarefa: Gere uma descrição de negócio concisa e clara para a {obj_type.lower()} \"{obj_name}\". Explique seu propósito principal no contexto do negócio."
+        prompt += f"\nTarefa: Gere uma descrição de negócio concisa e clara para a {obj_type.lower()} \"{obj_name}\", em Português brasileiro (pt-br). Explique seu propósito principal no contexto do negócio."
 
     return prompt
 
