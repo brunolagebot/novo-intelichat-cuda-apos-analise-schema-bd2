@@ -23,6 +23,7 @@ if project_root not in sys.path:
 from src.core.utils import load_json_safe
 from src.core.ai_integration import generate_description_with_adapter
 from src.core.logging_config import setup_logging
+from src.core.config import OUTPUT_COMBINED_FILE, OVERVIEW_COUNTS_FILE # Importar caminhos
 
 # Configurar logging (usando a função centralizada)
 setup_logging()
@@ -234,6 +235,19 @@ def load_faiss_and_embeddings(index_path, embeddings_file_path):
 
     return valid_faiss_index, index_to_column_map, column_to_embedding_map
 
+def load_row_counts(filepath=OVERVIEW_COUNTS_FILE): # Usar variável importada
+    """Carrega as contagens de linhas do arquivo JSON."""
+    try:
+        logger.info(f"Carregando contagens de linhas de {filepath}...")
+        with open(filepath, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        logger.warning(f"Arquivo {filepath} não encontrado ou inválido. Não será possível pular objetos vazios.")
+        return None
+    except json.JSONDecodeError:
+        logger.error(f"Erro ao decodificar JSON no arquivo de contagens {filepath}.", exc_info=True)
+        return None
+
 # --- Função Principal --- #
 
 def main():
@@ -251,6 +265,7 @@ def main():
     parser.add_argument("--similarity_top_k", type=int, default=5, help="Número de vizinhos similares a buscar no FAISS (incluindo a própria coluna).")
     parser.add_argument("--force_regenerate", action='store_true', help="Força a regeneração de todas as descrições, ignorando as existentes no arquivo de saída.")
     parser.add_argument("--max_items", type=int, default=None, help="Número máximo de itens (colunas) para processar (para teste rápido).")
+    parser.add_argument("--row_counts_file", default=OVERVIEW_COUNTS_FILE, help="Caminho para o arquivo JSON com contagens de linhas (para pular objetos vazios).")
     args = parser.parse_args()
 
     logger.info("--- Iniciando Geração de Descrições com IA (com logs de performance e opção de embeddings) ---")
@@ -284,15 +299,10 @@ def main():
         combined_schema = {}
     logger.info(f"Schema combinado carregado em: {comb_schema_end - comb_schema_start:.2f}s")
 
-    # NOVO: Carregar contagens de linhas
-    counts_load_start = time.perf_counter()
-    logger.info("Carregando contagens de linhas de data/overview_counts.json...")
-    row_counts = load_json_safe(os.path.join(project_root, 'data', 'overview_counts.json'))
-    counts_load_end = time.perf_counter()
-    if not row_counts:
-        logger.warning("Arquivo data/overview_counts.json não encontrado ou inválido. Não será possível pular objetos vazios.")
-        row_counts = {} # Define como dict vazio para evitar erros
-    logger.info(f"Contagens de linhas carregadas em: {counts_load_end - counts_load_start:.2f}s")
+    # Carregar contagens de linhas
+    row_counts = load_row_counts(args.row_counts_file)
+    if row_counts is None:
+        logger.warning("Contagens de linhas não carregadas. Não será possível pular objetos vazios.")
 
     # Carregar FAISS e Embeddings se ativado
     faiss_index = None

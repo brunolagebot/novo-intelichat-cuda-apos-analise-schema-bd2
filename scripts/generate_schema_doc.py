@@ -1,13 +1,23 @@
 import json
 import os
+import sys
 import logging
 
-# Configuração básica de logging
-logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+# Adiciona o diretório raiz ao sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from src.core.config import OUTPUT_COMBINED_FILE # Importar
+from src.core.log_utils import setup_logging
+
+# Configura o logging
+setup_logging()
 logger = logging.getLogger(__name__)
 
-INPUT_COMBINED_FILE = 'data/combined_schema_details.json'
-OUTPUT_DOC_FILE = 'docs/schema_documentation.md'
+# Constantes (removido, usar importação)
+# SCRIPT_DIR = os.path.dirname(__file__)
+# DATA_DIR = os.path.join(SCRIPT_DIR, '..', 'data')
+# INPUT_COMBINED_FILE = os.path.join(DATA_DIR, 'combined_schema_details.json')
+# OUTPUT_MD_FILE = os.path.join(DATA_DIR, 'metadata', 'schema_types_documentation.md') # Atualizado
 
 def load_json_safe(filename):
     """Carrega um arquivo JSON com tratamento de erros."""
@@ -111,14 +121,27 @@ def generate_markdown_doc(schema_data, filename):
     except Exception as e:
          logger.exception("Erro inesperado ao gerar a documentação Markdown:")
 
-# --- Execução Principal ---
+def main():
+    logger.info(f"Carregando dados do schema de: {OUTPUT_COMBINED_FILE}")
+    try:
+        with open(OUTPUT_COMBINED_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        logger.error(f"Erro: Arquivo {OUTPUT_COMBINED_FILE} não encontrado.")
+        return
+    except json.JSONDecodeError as e:
+        logger.error(f"Erro ao decodificar JSON em {OUTPUT_COMBINED_FILE}: {e}")
+        return
+
+    logger.info("Extraindo e contando tipos de dados...")
+    type_counts = extract_type_counts(data)
+
+    logger.info("Gerando documentação Markdown...")
+    # Define o caminho de saída aqui ou pega de config se existir
+    output_md_file = 'data/metadata/schema_types_documentation.md' # Definir explicitamente ou via config
+    generate_markdown(type_counts, output_md_file)
+
+    logger.info(f"Documentação salva em {output_md_file}")
+
 if __name__ == "__main__":
-    logger.info(f"Carregando schema combinado de: {INPUT_COMBINED_FILE}")
-    combined_schema = load_json_safe(INPUT_COMBINED_FILE)
-
-    if combined_schema:
-        generate_markdown_doc(combined_schema, OUTPUT_DOC_FILE)
-    else:
-        logger.error("Falha ao carregar o schema combinado. Geração de documentação abortada.")
-
-    print(f"\nProcesso de geração de documentação concluído. Resultado em {OUTPUT_DOC_FILE}") 
+    main() 

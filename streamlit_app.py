@@ -110,7 +110,11 @@ st.set_page_config(layout="wide", page_title="Editor de Metadados de Schema")
 
 # --- Carregamento Inicial e Inicialização do Estado --- #
 # Chama a função importada de data_loader
+init_load_start = time.perf_counter()
+logger.debug("Iniciando carregamento inicial e processamento de dados...")
 load_and_process_data()
+init_load_end = time.perf_counter()
+logger.info(f"Carregamento inicial e processamento concluído em {init_load_end - init_load_start:.4f} segundos")
 # --- FIM: Carregamento Inicial --- #
 
 # --- Referência local aos dados no estado da sessão --- #
@@ -125,9 +129,14 @@ db_charset = st.session_state.get('db_charset', config.DEFAULT_DB_CHARSET)
 
 # --- Barra Lateral ---
 # Chama a função da sidebar e obtém o modo selecionado
+sidebar_start = time.perf_counter()
 app_mode = display_sidebar(OLLAMA_AVAILABLE, technical_schema_data)
+sidebar_end = time.perf_counter()
+logger.debug(f"Renderização da Sidebar levou {sidebar_end - sidebar_start:.4f} segundos")
 
 # --- Conteúdo Principal (Condicional ao Modo) ---
+page_render_start = time.perf_counter()
+logger.debug(f"Iniciando renderização da página: {app_mode}")
 
 if app_mode == "Visão Geral":
     # Chama a função da página de Visão Geral, passando os dados necessários
@@ -168,22 +177,27 @@ elif app_mode == "Chat com Schema":
         metadata_dict=metadata_dict # Passa metadados (embora use st.session_state)
     )
 
+page_render_end = time.perf_counter()
+logger.info(f"Renderização da página '{app_mode}' levou {page_render_end - page_render_start:.4f} segundos")
+
 # --- LÓGICA DE AUTO-SAVE (Executa no final de cada rerun) ---
 # Mantém a lógica de Auto-Save aqui, pois é global para o app
+auto_save_check_start = time.perf_counter()
 if st.session_state.get('auto_save_enabled', False):
     time_since_last_save = time.time() - st.session_state.get('last_save_time', 0)
-
+    
     if time_since_last_save >= config.AUTO_SAVE_INTERVAL_SECONDS:
         logger.info(f"Verificando auto-save. Tempo desde último save: {time_since_last_save:.2f}s")
         # Verifica se há mudanças reais antes de salvar
         auto_save_desc_count, auto_save_notes_count = 0, 0
         auto_save_has_changes = False
+        comp_start = time.perf_counter()
         if 'initial_metadata' in st.session_state:
             try:
                 auto_save_desc_count, auto_save_notes_count = compare_metadata_changes(
-                    st.session_state.initial_metadata,
-                    st.session_state.metadata
-                )
+                        st.session_state.initial_metadata,
+                        st.session_state.metadata
+                    )
                 if auto_save_desc_count > 0 or auto_save_notes_count > 0:
                     auto_save_has_changes = True
             except Exception as e:
@@ -192,22 +206,32 @@ if st.session_state.get('auto_save_enabled', False):
         else:
             logger.warning("initial_metadata não encontrado no estado da sessão. Auto-save não pode verificar mudanças.")
             auto_save_has_changes = False
-
+        comp_end = time.perf_counter()
+        logger.debug(f"Comparação de metadados para auto-save levou {comp_end - comp_start:.4f} segundos.")
+        
         if auto_save_has_changes:
-            logger.info("Mudanças detectadas, iniciando auto-save...")
+            logger.info(f"Mudanças detectadas ({auto_save_desc_count} desc, {auto_save_notes_count} notes), iniciando auto-save...")
+            save_start = time.perf_counter()
             if save_metadata(st.session_state.metadata, config.METADATA_FILE):
+                save_end = time.perf_counter()
+                logger.info(f"Auto-save concluído em {save_end - save_start:.4f} segundos.")
                 try:
+                    post_save_start = time.perf_counter()
                     # Limpar cache e atualizar estado após salvar
                     load_metadata.clear()
                     st.session_state.initial_metadata = copy.deepcopy(st.session_state.metadata)
                     st.session_state.last_save_time = time.time()
-                    logger.info(f"Auto-save concluído com sucesso. Tempo atualizado: {st.session_state.last_save_time}")
+                    post_save_end = time.perf_counter()
+                    logger.info(f"Pós-processamento do auto-save (cache/estado) levou {post_save_end - post_save_start:.4f}s. Tempo atualizado: {st.session_state.last_save_time}")
                     st.toast("Metadados salvos automaticamente.", icon="⏱️")
                 except Exception as e:
                     logger.error(f"Erro durante pós-processamento do auto-save (limpeza de cache/atualização estado): {e}")
             else:
-                logger.error("Falha no auto-save (função save_metadata retornou False).")
+                save_end = time.perf_counter() # Mesmo se falhou, registra tempo
+                logger.error(f"Falha no auto-save (função save_metadata retornou False). Tentativa levou {save_end - save_start:.4f} segundos.")
         else:
             logger.debug("Auto-save verificado, mas sem alterações pendentes ou erro na comparação.")
 
+auto_save_check_end = time.perf_counter()
+logger.debug(f"Verificação/execução de auto-save levou {auto_save_check_end - auto_save_check_start:.4f} segundos.")
 # --- FIM: LÓGICA DE AUTO-SAVE ---

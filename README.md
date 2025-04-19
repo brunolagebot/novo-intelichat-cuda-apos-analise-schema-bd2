@@ -104,68 +104,73 @@ A aplicação utiliza o módulo `logging` padrão do Python para registrar infor
 
 A aplicação utiliza e gera diversos arquivos na pasta `data/`. É crucial entender o propósito e a origem de cada um:
 
-1.  **`technical_schema_details.json`** (Legado/Básico)
-    *   **Origem:** Gerado por versões anteriores de `scripts/extract_schema.py` ou se o script atual for modificado para gerar este formato.
-    *   **Conteúdo:** Estrutura técnica básica (tabelas, colunas, tipos, constraints PK/FK). **Não inclui defaults ou índices.**
-    *   **Uso:** Pode ser usado como input para `merge_schema_data.py` se o schema aprimorado não for necessário ou desejado.
+1.  **`technical_schema_from_db.json`** (Base Técnica Atual)
+    *   **Origem:** Gerado pelo script `scripts/extract_technical_schema.py` (ou similar que extraia do DB).
+    *   **Conteúdo:** Estrutura técnica detalhada extraída diretamente do banco de dados (tabelas, views, colunas, tipos, constraints, etc.). **Inclui campos pré-definidos (geralmente como `null`) para metadados manuais e de IA.**
+    *   **Uso:** Serve como a **base estrutural** para o processo de merge no script `scripts/merge_metadata_for_embeddings.py`.
 
-2.  **`enhanced_technical_schema.json`** (Recomendado)
-    *   **Origem:** Gerado pela versão atual de `scripts/extract_schema.py`.
-    *   **Conteúdo:** Contém a **estrutura técnica mais completa** extraída do banco, incluindo tabelas, views, colunas (com tipo, nulidade, default, descrição técnica, **amostra de valores - até 10**), constraints (PK, FK, Unique) e índices (com propósito). Inclui também contagem de referências FK (`fk_reference_counts`).
-    *   **Uso:** Fonte de dados técnicos mais rica. Pode ser usado (com adaptações) pelo script de merge ou para outras análises.
+2.  **`metadata_schema_manual.json`** (Metadados Manuais)
+    *   **Origem:** **Criado e atualizado pela interface da aplicação Streamlit (ou manualmente).** 
+    *   **Conteúdo:** Armazena os **metadados de negócio inseridos manualmente**: `business_description` e `value_mapping_notes` para colunas. Pode conter descrições a nível de tabela/view também.
+    *   **⚠️ IMPORTANTE:** Este arquivo é a **fonte da verdade para os dados inseridos manualmente**. 
+    *   **Uso:** Usado como input pelo `scripts/merge_metadata_for_embeddings.py` para enriquecer o schema base com informações manuais.
+    *   **Backup/Versioning:** A aplicação Streamlit pode criar backups automáticos deste arquivo na pasta `data/metadata_backups/`.
 
-3.  **`schema_metadata.json`**
-    *   **Origem:** **Criado e atualizado pela interface da aplicação Streamlit.** Pode ser iniciado manually ou como cópia de um arquivo anterior.
-    *   **Conteúdo:** Armazena os **metadados de negócio inseridos manualmente**: descrições de tabelas/views/colunas, notas de mapeamento de valores, contexto global, etc.
-    *   **⚠️ IMPORTANTE:** Este arquivo é a **fonte da verdade para os dados inseridos manualmente**. Nenhum script deve **sobrescrever** este arquivo automaticamente. Scripts como `merge_schema_data.py` apenas **leem** este arquivo.
-    *   ** बैकअप/संस्करण:** Para prevenir perda acidental de dados, **um backup automático é criado** na subpasta `data/metadata_backups/` cada vez que alterações são salvas pela interface. O nome do backup inclui a data e hora (timestamp), por exemplo: `schema_metadata_20231027_153000.json`. Isso permite recuperar versões anteriores se necessário.
+3.  **`ai_generated_descriptions_openai_35turbo.json`** (Descrições IA)
+    *   **Origem:** Gerado por scripts como `scripts/generate_ai_descriptions.py` (ou nome similar dependendo do modelo/método usado).
+    *   **Conteúdo:** Uma lista de dicionários, cada um contendo a `generated_description`, `model_used`, e `generation_timestamp` para uma coluna específica.
+    *   **Uso:** Usado como input pelo `scripts/merge_metadata_for_embeddings.py` para adicionar as descrições geradas por IA ao schema base.
 
-4.  **`combined_schema_details.json`**
-    *   **Origem:** Gerado pelo script `scripts/merge_schema_data.py` (lendo um schema técnico e `schema_metadata.json`).
-    *   **Conteúdo:** Resulta da **combinação** da estrutura técnica (`technical_schema_details.json`) com os metadados manuais (`schema_metadata.json`). Pode incluir informações adicionais calculadas durante o merge (ex: contagens de referência FK).
-    *   **Metadados Internos (`_metadata_info`):** Este arquivo também contém uma chave especial `_metadata_info` no nível raiz, adicionada pelo script de merge, com as seguintes informações:
-        *   `total_column_count`: Número total de colunas presentes neste arquivo combinado.
-        *   `manual_metadata_column_count`: Número de colunas que possuem `business_description` ou `value_mapping_notes` preenchidos (indicando metadados manuais).
-        *   `missing_manual_metadata_column_count`: Número de colunas que **não** possuem `business_description` nem `value_mapping_notes` preenchidos (total - manual).
-        *   `validation_status`: Indica se o schema combinado está completo em relação ao `technical_schema_details.json` no momento do merge ('OK' ou 'Incomplete').
-        *   `validation_timestamp`: Data e hora (ISO 8601) em que o merge e a validação foram executados.
-        *   `missing_objects`: Lista de tabelas/views do schema técnico que não foram encontradas no combinado (se `validation_status` for 'Incomplete').
-        *   `missing_columns`: Dicionário mapeando tabelas/views para listas de colunas técnicas que não foram encontradas no combinado (se `validation_status` for 'Incomplete').
-    *   **Uso:** Principal arquivo de dados **lido pela aplicação Streamlit** para exibir a estrutura combinada e alimentar as funcionalidades de edição e análise. É definido pela constante `config.TECHNICAL_SCHEMA_FILE` no código.
+4.  **`merged_schema_for_embeddings.json`** (Schema Mesclado para Embeddings) - **NOVO**
+    *   **Origem:** Gerado pelo novo script `scripts/merge_metadata_for_embeddings.py`.
+    *   **Conteúdo:** Resulta da **combinação** da estrutura técnica base (`technical_schema_from_db.json`) com os metadados manuais (`metadata_schema_manual.json`) e as descrições geradas por IA (`ai_generated_descriptions...json`). Preserva a estrutura do arquivo base, mas preenche os campos `business_description`, `value_mapping_notes`, `ai_generated_description`, `ai_model_used`, `ai_generation_timestamp` com os dados das outras fontes.
+    *   **Uso:** Este é o arquivo **final e enriquecido** que deve ser usado como **input** para o script que gera os embeddings vetoriais (ex: `scripts/generate_embeddings.py`).
 
-5.  **`schema_with_embeddings.json`** (Opcional)
-    *   **Origem:** Gerado pelo script `scripts/generate_embeddings.py`.
-    *   **Conteúdo:** Uma cópia do `combined_schema_details.json` **enriquecida com vetores de embedding** para cada coluna (ou suas descrições).
-    *   **Uso:** Carregado pela aplicação quando a opção "Usar Embeddings" está ativa, habilitando a busca por similaridade semântica e o contexto do chat. É definido pela constante `config.EMBEDDED_SCHEMA_FILE`. Devido ao tamanho (potencialmente >1GB), sua geração e uso são opcionais.
+5.  **`combined_schema_details.json`** (Schema para UI)
+    *   **Origem:** Gerado pelo script `scripts/merge_schema_data.py` (script legado ou alternativo, documentação pendente). 
+    *   **Conteúdo:** Resulta da combinação de um schema técnico (possivelmente `technical_schema_details.json`) com metadados manuais (`schema_metadata.json` ou similar). *Pode ter uma estrutura diferente do `merged_schema_for_embeddings.json`.*
+    *   **Uso:** Principal arquivo de dados **lido pela aplicação Streamlit** para exibir a estrutura e alimentar as funcionalidades de edição e análise. **Não é mais o input direto para a geração de embeddings no fluxo principal.** É definido pela constante `config.OUTPUT_COMBINED_FILE`.
 
-6.  **`overview_counts.json`**
-    *   **Origem:** Gerado e atualizado pelo script `scripts/calculate_row_counts.py` (executado manualmente pela interface).
+6.  **`schema_with_embeddings.json`** (Schema com Embeddings - Opcional)
+    *   **Origem:** Gerado pelo script `scripts/generate_embeddings.py` (ou similar).
+    *   **Conteúdo:** Uma cópia do **`merged_schema_for_embeddings.json`** enriquecida com vetores de embedding para cada coluna (ou suas descrições).
+    *   **Uso:** Carregado pela aplicação quando a opção "Usar Embeddings" está ativa, habilitando a busca por similaridade semântica e o contexto do chat. É definido pela constante `config.EMBEDDED_SCHEMA_FILE`.
+
+7.  **`overview_counts.json`**
+    *   **Origem:** Gerado e atualizado pelo script `scripts/calculate_row_counts.py` (executado manualmente pela interface ou via script).
     *   **Conteúdo:** Cache da contagem de linhas para cada tabela/view e o timestamp da contagem.
-    *   **Uso:** Exibido na página "Visão Geral" para fornecer uma rápida noção do volume de dados sem consultar o banco a cada vez.
+    *   **Uso:** Exibido na página "Visão Geral".
 
-7.  **`faiss_column_index.idx`** (Opcional)
-    *   **Origem:** Gerado pelo script `scripts/generate_embeddings.py` junto com `schema_with_embeddings.json`.
+8.  **`faiss_column_index.idx`** (Opcional)
+    *   **Origem:** Gerado pelo script `scripts/generate_embeddings.py` (ou similar) junto com `schema_with_embeddings.json`.
     *   **Conteúdo:** Índice binário FAISS otimizado para busca rápida por similaridade nos embeddings.
-    *   **Uso:** Carregado em memória pela aplicação (se embeddings estiverem ativos) para acelerar a funcionalidade "Buscar Similares".
+    *   **Uso:** Carregado em memória pela aplicação (se embeddings estiverem ativos).
 
-8.  **`chat_history.json`** (Opcional)
+9.  **`chat_history.json`** (Opcional)
     *   **Origem:** Criado e atualizado pela funcionalidade "Chat com Schema".
     *   **Conteúdo:** Histórico das perguntas e respostas da interação com o chat.
     *   **Uso:** Persistir o histórico do chat entre sessões.
 
-9.  **`chat_feedback.json`** (Opcional)
+10. **`chat_feedback.json`** (Opcional)
     *   **Origem:** Criado e atualizado pela funcionalidade "Chat com Schema" quando o usuário dá feedback.
     *   **Conteúdo:** Registro do feedback (Bom/Médio/Ruim) para cada mensagem do assistente.
     *   **Uso:** Coleta de dados para avaliação e melhoria futura do assistente de chat.
 
-**Ordem de Geração/Fluxo:**
+**(Arquivos Legados/Alternativos - Verificar necessidade)**
 
-Extração Técnica (`extract_schema.py`) -> `technical_schema_details.json` \
-+ Edição Manual (UI) -> `schema_metadata.json` \
--> Merge (`merge_schema_data.py`) -> `combined_schema_details.json` \
--> Geração de Embeddings (`generate_embeddings.py`) -> `schema_with_embeddings.json` + `faiss_column_index.idx`
+*   **`technical_schema_details.json`**: Versão básica da extração técnica.
+*   **`enhanced_technical_schema.json`**: Versão mais completa da extração técnica (de `extract_schema.py`).
+*   **`generated_schema_structure.json`**: Saída de `extract_new_schema_firebird.py` (pode ser redundante agora).
 
-O `overview_counts.json` é gerado separadamente por `calculate_row_counts.py`. Os arquivos de chat são gerados pela interação do usuário.
+**Ordem de Geração/Fluxo (Foco em Embeddings):**
+
+1.  Extração Técnica (`scripts/extract_technical_schema.py`) -> `data/metadata/technical_schema_from_db.json`
+2.  Edição Manual (UI ou Direta) -> `data/metadata/metadata_schema_manual.json`
+3.  Geração IA (`scripts/generate_ai_descriptions.py`) -> `data/metadata/ai_generated_descriptions...json`
+4.  **Merge Final** (`scripts/merge_metadata_for_embeddings.py`) -> `data/processed/merged_schema_for_embeddings.json`
+5.  Geração Embeddings (`scripts/generate_embeddings.py`) -> `data/embeddings/schema_with_embeddings.json` + `data/embeddings/faiss_column_index.idx`
+
+(O `overview_counts.json` e os arquivos de chat são gerados independentemente. O `combined_schema_details.json` pode ter um fluxo paralelo ou legado para a UI.)
 
 ## Configuração e Execução
 
@@ -217,13 +222,46 @@ O `overview_counts.json` é gerado separadamente por `calculate_row_counts.py`. 
 Novo/\
 ├── .streamlit/                 # Configurações e segredos do Streamlit\
 │   └── secrets.toml\
-├── data/                       # Arquivos de dados (schemas, metadados, embeddings, etc.)\
-│   └── ...\
+├── data/                       # Arquivos de dados (schemas, metadados, embeddings, logs, etc.)\
+│   ├── ai_outputs/             # Saídas geradas por modelos de IA\
+│   │   └── raw/                # Saídas brutas\
+│   │       └── ... (ex: ai_generated_descriptions_*.json)\
+│   ├── chat/                   # Dados relacionados ao chatbot\
+│   │   ├── chat_feedback.json\
+│   │   └── chat_history.json\
+│   ├── embeddings/             # Embeddings e índices FAISS\
+│   │   ├── ... (ex: faiss_index_*.idx)\
+│   │   └── ... (ex: schema_embeddings_*.json)\
+│   ├── input/                  # Dados de entrada brutos (ex: schema técnico inicial)\
+│   │   └── technical_schema_details.json\
+│   ├── logs/                   # Arquivos de log\
+│   │   └── app.log\
+│   ├── metadata/               # Metadados manuais e contagens\
+│   │   ├── overview_counts.json\
+│   │   ├── schema_metadata.json  # <<< Editado pela UI
+│   │   └── schema_types_documentation.md\
+│   ├── metadata_backups/       # Backups automáticos de schema_metadata.json\
+│   │   └── ...\
+│   ├── processed/              # Dados processados ou combinados\
+│   │   ├── combined_schema_details.json # <<< Usado pela UI
+│   │   ├── enhanced_technical_schema.json\
+│   │   ├── schema_dataframe.csv\
+│   │   └── schema_dataset.jsonl\
+│   └── ai_generated_descriptions_openai_35turbo.json # ARQUIVO TEMPORÁRIO (em uso)
 ├── docs/                       # Documentação do projeto\
 │   └── ROADMAP.md\
 ├── scripts/                    # Scripts Python para tarefas batch/automação\
 │   ├── __init__.py\
-│   └── ... (extract_schema, generate_*, merge_*, etc.)\
+│   ├── old/                    # Scripts antigos ou substituídos\
+│   │   ├── standardize_metadata_keys.py\
+│   │   └── standardize_schema_metadata.py\
+│   ├── finetuning/             # Scripts para finetune de modelos\
+│   │   ├── prepare_finetune_data.py\
+│   │   ├── run_finetune.py\
+│   │   ├── run_finetune_schema.py\
+│   │   └── run_finetune_schema_phi3.py\
+│   ├── SCRIPT_DOCUMENTATION.md # Documentação dos scripts (se existir)\
+│   └── ... (extract_schema, generate_embeddings, merge_schema, etc.)\
 ├── src/                        # Código fonte principal da aplicação\
 │   ├── __init__.py\
 │   ├── core/                   # Lógica central da aplicação\

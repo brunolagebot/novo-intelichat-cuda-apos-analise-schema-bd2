@@ -11,20 +11,20 @@ Este documento descreve os passos sugeridos para refatorar a estrutura do projet
         - [X] Atualizar todos os imports no projeto (`streamlit_app.py`, `scripts/`, outros módulos em `src/`) para refletir a nova localização.
         - [X] Remover o diretório `core/` vazio.
 
-- [ ] **2. Reestruturar Diretório `data/`**
+- [X] **2. Reestruturar Diretório `data/`**
     - **Objetivo:** Organizar os arquivos de dados por tipo/propósito.
     - **Ações:**
-        - [ ] Criar subdiretórios dentro de `data/` (ex: `input/`, `processed/`, `metadata/`, `ai_outputs/raw/`, `embeddings/`, `chat/`).
-        - [ ] Mover os arquivos existentes para os subdiretórios apropriados.
-        - [ ] Atualizar a configuração central (`src/config.py`) com os novos caminhos para todos os arquivos de dados.
-        - [ ] Verificar e ajustar todos os pontos do código que leem/escrevem nesses arquivos para usar os caminhos da configuração.
+        - [X] Criar subdiretórios dentro de `data/` (ex: `input/`, `processed/`, `metadata/`, `ai_outputs/raw/`, `embeddings/`, `chat/`, `logs/`).
+        - [X] Mover os arquivos existentes para os subdiretórios apropriados (exceto um arquivo AI em uso).
+        - [X] Atualizar a configuração central (`src/core/config.py`) com os novos caminhos para todos os arquivos de dados movidos.
+        - [X] Verificar e ajustar todos os pontos do código que leem/escrevem nesses arquivos para usar os caminhos da configuração (scripts em `scripts/` ajustados).
 
 - [ ] **3. Centralizar Configurações**
-    - **Objetivo:** Garantir que todas as configurações (caminhos, nomes de modelos, URLs, credenciais padrão) estejam definidas em `src/config.py`.
+    - **Objetivo:** Garantir que todas as configurações (caminhos, nomes de modelos, URLs, credenciais padrão) estejam definidas em `src/core/config.py`.
     - **Ações:**
-        - [ ] Revisar `streamlit_app.py`, scripts em `scripts/` e módulos em `src/` para identificar constantes ou valores hardcoded que deveriam estar na configuração.
-        - [ ] Mover essas configurações para `src/config.py`.
-        - [ ] Atualizar o código para importar e usar essas configurações a partir de `src/config.py`.
+        - [X] Revisar `streamlit_app.py`, scripts em `scripts/` e módulos em `src/` para identificar constantes ou valores hardcoded que deveriam estar na configuração (Revisão inicial feita, caminhos identificados).
+        - [X] Mover essas configurações para `src/core/config.py` (Caminhos movidos).
+        - [X] Atualizar o código para importar e usar essas configurações a partir de `src/core/config.py` (Scripts em `scripts/` atualizados para usar caminhos do config).
 
 - [ ] **4. Implementar Testes Automatizados**
     - **Objetivo:** Aumentar a confiabilidade e facilitar a manutenção futura.

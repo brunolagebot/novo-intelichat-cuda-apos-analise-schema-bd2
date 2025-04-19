@@ -2,6 +2,7 @@ import logging
 import logging.config
 import os
 import sys
+from src.core.config import LOG_FILE # Importar o caminho do arquivo de log
 
 LOGGING_CONFIG = {
     'version': 1,
@@ -26,9 +27,10 @@ LOGGING_CONFIG = {
         'file': {
             'level': 'DEBUG', # Captura mais detalhes no arquivo
             'formatter': 'detailed',
-            'class': 'logging.FileHandler',
-            'filename': 'data/app.log', # Salva os logs na pasta data
-            'mode': 'a', # 'a' para append, 'w' para overwrite a cada execução
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOG_FILE, # Usar a variável importada
+            'maxBytes': 1024*1024*50, # 50 MB
+            'backupCount': 3,
             'encoding': 'utf-8',
         },
     },
@@ -51,6 +53,11 @@ LOGGING_CONFIG = {
          'watchdog': { # Watchdog pode ser verboso, ajustar nível
             'handlers': ['console', 'file'],
             'level': 'WARNING',
+            'propagate': False,
+        },
+        'werkzeug': { # Configuração específica para logs do Werkzeug (usado pelo Flask/Streamlit)
+            'handlers': ['file'],
+            'level': logging.WARNING, # Reduzir verbosidade, mostrar apenas warnings e erros
             'propagate': False,
         }
         # Adicione outros loggers específicos de bibliotecas se necessário

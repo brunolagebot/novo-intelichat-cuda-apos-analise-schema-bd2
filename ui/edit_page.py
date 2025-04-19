@@ -521,6 +521,31 @@ def display_edit_page(technical_schema_data, metadata_dict, OLLAMA_AVAILABLE, ch
                             st.session_state.metadata[metadata_key_type][selected_object]['COLUMNS'][col_name]['value_mapping_notes'] = new_col_notes
                             st.session_state.unsaved_changes = True
 
+                        # --- EXIBIR DESCRIÇÃO IA (ADICIONADO AQUI) ---
+                        # Acessa os dados técnicos/enriquecidos da coluna
+                        tech_col_data_for_ai = next((c for c in technical_columns if c['name'] == col_name), None)
+                        if tech_col_data_for_ai:
+                            ai_desc = tech_col_data_for_ai.get('ai_generated_description')
+                            if ai_desc:
+                                with st.expander("👁️ Ver Descrição da IA (Sugestão)", expanded=False):
+                                    ai_model = tech_col_data_for_ai.get('ai_model_used', 'N/A')
+                                    ai_ts_str = tech_col_data_for_ai.get('ai_generation_timestamp')
+                                    ai_ts_display = "N/A"
+                                    if ai_ts_str:
+                                        try:
+                                            # Importar datetime se ainda não foi importado no início do arquivo
+                                            import datetime 
+                                            ai_ts_dt = datetime.datetime.fromisoformat(ai_ts_str.replace('Z', '+00:00'))
+                                            ai_ts_display = ai_ts_dt.strftime("%d/%m/%Y %H:%M")
+                                        except (ValueError, ImportError):
+                                            ai_ts_display = "Data inválida"
+                                    
+                                    st.caption(f"Gerada por: {ai_model} em {ai_ts_display}")
+                                    st.markdown(f"> _{ai_desc}_")
+                            # else: # Opcional: Mostrar algo se não houver descrição IA
+                            #    st.caption("Nenhuma descrição IA encontrada neste schema.")
+                        # --- FIM EXIBIR DESCRIÇÃO IA ---
+
             st.divider()
 
             # --- Seção de Pré-visualização e Exportação --- #

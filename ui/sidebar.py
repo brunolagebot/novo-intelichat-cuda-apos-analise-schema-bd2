@@ -102,7 +102,6 @@ def display_sidebar(OLLAMA_AVAILABLE, technical_schema_data):
         st.sidebar.toggle(
             "Usar Embeddings (Schema Otimizado)",
             key='use_embeddings',
-            value=st.session_state.get('use_embeddings', False),
             help=f"Carrega `{config.EMBEDDED_SCHEMA_FILE}`. Pode levar um momento.",
             on_change=handle_embedding_toggle # Chama a função importada
         )
@@ -121,7 +120,6 @@ def display_sidebar(OLLAMA_AVAILABLE, technical_schema_data):
     if OLLAMA_AVAILABLE:
         st.sidebar.toggle("Habilitar Sugestões IA (Ollama)", 
                           key='ollama_enabled', 
-                          value=st.session_state.get('ollama_enabled', False),
                           help="Desabilitar pode melhorar a performance.")
     else:
         st.sidebar.caption("Sugestões IA (Ollama) indisponíveis.")
@@ -244,7 +242,6 @@ def display_sidebar(OLLAMA_AVAILABLE, technical_schema_data):
     st.sidebar.toggle(
         "Habilitar Auto-Save (Intervalo)",
         key='auto_save_enabled',
-        value=st.session_state.get('auto_save_enabled', False),
         help=f"Salva automaticamente a cada {config.AUTO_SAVE_INTERVAL_SECONDS // 60} minutos."
     )
 

@@ -1,11 +1,21 @@
 import json
 import os
-from collections import defaultdict
+import sys
 import logging
+from collections import defaultdict, Counter
 
-# Configuração básica de logging
-logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+# Adiciona o diretório raiz ao sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from src.core.config import OUTPUT_COMBINED_FILE # Importar
+from src.core.log_utils import setup_logging
+
+# Configurar logging
+setup_logging()
 logger = logging.getLogger(__name__)
+
+# Constantes (removido, usar importação)
+# INPUT_JSON_FILE = 'data/processed/combined_schema_details.json'
 
 INPUT_JSON_FILE = 'data/combined_schema_details.json'
 TOP_N = 10 # Número de itens a serem exibidos nas listas "top"
@@ -189,17 +199,57 @@ def analyze_missing_descriptions(schema_data):
         #     print(f"- {item}") 
         print("(Lista completa omitida para brevidade se for muito longa)")
 
-# --- Execução Principal ---
-if __name__ == "__main__":
-    logger.info(f"Analisando schema do arquivo: {INPUT_JSON_FILE}")
-    schema = load_schema_data()
+def main():
+    logger.info(f"Carregando dados do schema combinado de: {OUTPUT_COMBINED_FILE}")
+    try:
+        with open(OUTPUT_COMBINED_FILE, 'r', encoding='utf-8') as f:
+            schema_data = json.load(f)
+    except FileNotFoundError:
+        logger.error(f"Erro: Arquivo {OUTPUT_COMBINED_FILE} não encontrado.")
+        return
+    except json.JSONDecodeError as e:
+        logger.error(f"Erro ao decodificar JSON em {OUTPUT_COMBINED_FILE}: {e}")
+        return
 
-    if schema:
-        analyze_most_referenced(schema)
-        analyze_junction_tables(schema)
-        analyze_tables_without_pk(schema)
-        analyze_isolated_tables(schema)
-        analyze_missing_descriptions(schema)
-        logger.info("Análise concluída.")
-    else:
-        logger.error("Não foi possível carregar o schema. Análise abortada.") 
+    logger.info("Iniciando análise do schema...")
+    analysis_results = analyze_schema(schema_data)
+
+    logger.info("\n--- Resultados da Análise do Schema ---")
+    print("\n--- Resultados da Análise do Schema ---")
+
+    print(f"\nTipos de Objetos Encontrados: {list(analysis_results['object_types'])}")
+    logger.info(f"Tipos de Objetos Encontrados: {list(analysis_results['object_types'])}")
+
+    for obj_type, count in analysis_results['object_counts'].items():
+        print(f"- Contagem de {obj_type}: {count}")
+        logger.info(f"- Contagem de {obj_type}: {count}")
+
+    print(f"\nContagem Total de Colunas: {analysis_results['total_columns']}")
+    logger.info(f"Contagem Total de Colunas: {analysis_results['total_columns']}")
+
+    print("\nDistribuição de Tipos de Dados das Colunas:")
+    logger.info("Distribuição de Tipos de Dados das Colunas:")
+    for data_type, count in analysis_results['column_type_distribution'].most_common():
+        print(f"- {data_type}: {count}")
+        logger.info(f"- {data_type}: {count}")
+
+    print(f"\nColunas com Descrição Manual: {analysis_results['columns_with_manual_description']}")
+    logger.info(f"Colunas com Descrição Manual: {analysis_results['columns_with_manual_description']}")
+    print(f"Colunas SEM Descrição Manual: {analysis_results['columns_without_manual_description']}")
+    logger.info(f"Colunas SEM Descrição Manual: {analysis_results['columns_without_manual_description']}")
+
+    print(f"\nColunas com Descrição AI: {analysis_results['columns_with_ai_description']}")
+    logger.info(f"Colunas com Descrição AI: {analysis_results['columns_with_ai_description']}")
+    print(f"Colunas SEM Descrição AI: {analysis_results['columns_without_ai_description']}")
+    logger.info(f"Colunas SEM Descrição AI: {analysis_results['columns_without_ai_description']}")
+
+    print(f"\nColunas Primárias (PK): {analysis_results['primary_key_columns']}")
+    logger.info(f"Colunas Primárias (PK): {analysis_results['primary_key_columns']}")
+    print(f"Colunas Estrangeiras (FK): {analysis_results['foreign_key_columns']}")
+    logger.info(f"Colunas Estrangeiras (FK): {analysis_results['foreign_key_columns']}")
+
+    print("\nAnálise concluída.")
+    logger.info("Análise concluída.")
+
+if __name__ == "__main__":
+    main() 

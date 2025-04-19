@@ -39,23 +39,58 @@ def display_chat_page(OLLAMA_AVAILABLE, chat_completion, OLLAMA_EMBEDDING_AVAILA
             if message["role"] == "assistant":
                 message_id = message.get("message_id")
                 if message_id:
-                    feedback_given = message_id in st.session_state.get('feedback_ids', set())
+                    # Verifica se feedback existe e qual o rating atual (para visualização opcional)
+                    current_feedback = next((fb for fb in st.session_state.feedback_log if fb['message_id'] == message_id), None)
+                    feedback_given = current_feedback is not None
+                    current_rating = current_feedback['rating'] if current_feedback else None
+
                     fb_cols = st.columns(3)
                     ratings = ["Bom", "Médio", "Ruim"]
                     icons = ["👍", "🤔", "👎"]
                     for i, rating in enumerate(ratings):
                         with fb_cols[i]:
                             button_key = f"feedback_{message_id}_{rating}"
-                            if st.button(icons[i], key=button_key, help=rating, disabled=feedback_given, use_container_width=True):
-                                if not feedback_given:
-                                    new_feedback = {"message_id": message_id, "rating": rating, "timestamp": time.time()}
+                            # REMOVIDO: disabled=feedback_given
+                            # ADICIONADO: type='primary' se for o rating atual para destaque (opcional)
+                            button_type = "primary" if rating == current_rating else "secondary"
+                            if st.button(icons[i], key=button_key, help=rating, use_container_width=True, type=button_type):
+                                timestamp = time.time()
+                                feedback_updated = False
+                                # ATUALIZADO: Lógica para criar ou atualizar feedback
+                                if feedback_given:
+                                    # Atualiza o feedback existente
+                                    for fb_entry in st.session_state.feedback_log:
+                                        if fb_entry['message_id'] == message_id:
+                                            if fb_entry['rating'] != rating:
+                                                fb_entry['rating'] = rating
+                                                fb_entry['timestamp'] = timestamp
+                                                feedback_updated = True
+                                                logger.info(f"Feedback atualizado para msg {message_id}: {rating}")
+                                            else:
+                                                 # Clicou no mesmo botão, não faz nada ou poderia remover?
+                                                 # Por ora, não faremos nada se clicar no mesmo.
+                                                 logger.debug(f"Feedback clicado novamente para msg {message_id} sem mudança: {rating}")
+                                            break # Sai do loop interno
+                                else:
+                                    # Adiciona novo feedback
+                                    new_feedback = {"message_id": message_id, "rating": rating, "timestamp": timestamp}
                                     st.session_state.feedback_log.append(new_feedback)
-                                    st.session_state.feedback_ids.add(message_id)
+                                    st.session_state.feedback_ids.add(message_id) # Adiciona ao set de IDs com feedback
+                                    feedback_updated = True
+                                    logger.info(f"Novo feedback registrado para msg {message_id}: {rating}")
+
+                                # Salva apenas se houve mudança ou novo feedback
+                                if feedback_updated:
                                     if save_json(st.session_state.feedback_log, config.CHAT_FEEDBACK_FILE):
-                                        st.toast(f"Feedback '{rating}' registrado!", icon="✍️")
+                                        toast_msg = f"Feedback '{rating}' atualizado!" if feedback_given else f"Feedback '{rating}' registrado!"
+                                        st.toast(toast_msg, icon="✍️")
                                     else:
                                         st.toast("Erro ao salvar feedback!", icon="❌")
-                                    st.rerun()
+                                    st.rerun() # Rerun para atualizar visualização dos botões
+                                else:
+                                    # Se clicou no mesmo botão que já estava, apenas informa (opcional)
+                                    # st.toast(f"Feedback '{rating}' já estava selecionado.", icon="ℹ️")
+                                    pass
 
     # Input do usuário
     if prompt := st.chat_input("Qual sua dúvida sobre o schema?"):
