@@ -11,8 +11,8 @@ import copy # Para deepcopy do estado inicial no reload
 
 # Importações de módulos core
 import src.core.config as config
-from src.core.db_utils import fetch_latest_nfs_timestamp
-from src.core.ai_integration import handle_embedding_toggle # Assumindo que esta função pode ser chamada diretamente
+from src.database.db_utils import fetch_latest_nfs_timestamp
+from src.ollama_integration.ai_integration import handle_embedding_toggle
 from src.core.metadata_logic import save_metadata, apply_heuristics_globally, populate_descriptions_from_keys, compare_metadata_changes
 from src.core.data_loader import load_metadata, load_technical_schema # Para reload e merge
 
@@ -126,55 +126,26 @@ def display_sidebar(OLLAMA_AVAILABLE, technical_schema_data):
 
     st.sidebar.divider()
 
-    # --- Ações Globais --- #
-    st.sidebar.header("Ações Globais")
+    # --- Botões de Ação Global ---
+    st.sidebar.subheader("Ações")
 
     # Botão Salvar
-    if st.sidebar.button("💾 Salvar Alterações nos Metadados", type="primary", key="save_metadata_sidebar"):
-        logger.info("Tentativa de salvamento manual iniciada.")
-        new_desc_count, new_notes_count = 0, 0
-        if 'initial_metadata' in st.session_state:
-            # Usa a função importada
-            new_desc_count, new_notes_count = compare_metadata_changes(
-                st.session_state.initial_metadata,
-                st.session_state.metadata
-            )
-        else:
-            logger.warning("Estado inicial dos metadados não encontrado para comparação.")
-
+    save_button_disabled = not st.session_state.get('unsaved_changes', False)
+    if st.sidebar.button("Salvar Alterações", key="save_button", type="primary", disabled=save_button_disabled):
         if save_metadata(st.session_state.metadata, config.METADATA_FILE):
-            success_message = f"Metadados salvos com sucesso em `{config.METADATA_FILE}`!"
-            if new_desc_count > 0 or new_notes_count > 0:
-                success_message += f" ({new_desc_count} descrições, {new_notes_count} notas adicionadas)"
-            st.sidebar.success(success_message, icon="✅")
-            try:
-                load_metadata.clear() # Limpa cache da função importada
-                st.session_state.initial_metadata = copy.deepcopy(st.session_state.metadata)
-                st.session_state.last_save_time = time.time()
-                logger.info("Cache limpo, estado inicial e tempo de save atualizados.")
-            except Exception as e:
-                logger.warning(f"Erro ao limpar cache ou atualizar estado: {e}")
+            st.session_state.unsaved_changes = False
+            st.session_state.initial_metadata = copy.deepcopy(st.session_state.metadata) # Atualiza o estado inicial
+            st.toast("Metadados salvos com sucesso!", icon="✅")
+            # Não precisa de rerun, a UI se atualiza com o estado
         else:
             st.sidebar.error("Falha ao salvar metadados.")
 
-    # Botão Recarregar
-    if st.sidebar.button("Recarregar Metadados do Arquivo", key="reload_metadata_sidebar"):
-        load_metadata.clear()
-        reloaded_meta = load_metadata(config.METADATA_FILE)
-        if reloaded_meta is not None:
-            st.session_state.metadata = reloaded_meta
-            try:
-                st.session_state.initial_metadata = copy.deepcopy(reloaded_meta)
-                logger.info("Estado inicial dos metadados atualizado após recarregar.")
-            except Exception as e:
-                logger.error(f"Erro ao deepcopy dos metadados iniciais: {e}")
-                st.session_state.initial_metadata = {}
-            st.sidebar.success("Metadados recarregados do arquivo!")
-            st.rerun()
-        else:
-            st.sidebar.error("Falha ao recarregar metadados.")
-
-    st.sidebar.caption(f"Arquivo: {config.METADATA_FILE}")
+    # Comentado: Botão Descartar
+    # if st.sidebar.button("Descartar Alterações", key="discard_button", disabled=not st.session_state.get('unsaved_changes', False)):
+    #     st.session_state.metadata = copy.deepcopy(st.session_state.initial_metadata) # Restaura do estado inicial
+    #     st.session_state.unsaved_changes = False
+    #     st.toast("Alterações descartadas.", icon="🗑️")
+    #     st.rerun() # Rerun para refletir a restauração
 
     # --- Processamento de Dados --- #
     st.sidebar.divider()

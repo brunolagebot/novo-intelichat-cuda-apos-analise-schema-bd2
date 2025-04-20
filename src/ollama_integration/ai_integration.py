@@ -5,13 +5,13 @@ import streamlit as st # Necessário para spinners, toasts, session_state, etc.
 import numpy as np
 import faiss
 import os # Necessário para handle_embedding_toggle verificar arquivo
-import torch # Adicionar import
+# import torch # MOVENDO para dentro da função que usa
 
 import src.core.config as config
 # TODO: Verificar se essas importações circulares/cruzadas serão um problema
 # Talvez load_technical_schema deva estar em data_loader e as outras duas em analysis?
 # from src.core.data_loader import load_technical_schema # REMOVIDA importação de nível superior
-from src.core.analysis import analyze_key_structure
+from src.analysis.analysis import analyze_key_structure
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +102,8 @@ def generate_description_with_adapter(
         str: A descrição gerada e limpa em caso de sucesso.
         None: Em caso de erro durante a geração.
     """
+    import torch # Importa aqui, apenas quando a função é chamada
+    
     # Garantir que o modelo esteja no dispositivo correto (ex: GPU se disponível)
     device = model.device
     logger.debug(f"Gerando descrição com modelo no dispositivo: {device}")

@@ -9,7 +9,8 @@ import time
 import src.core.config as config
 from src.utils.json_helpers import load_json, save_json
 # Importações para busca semântica (se reativada)
-from src.core.ai_integration import find_similar_columns, get_query_embedding
+from src.ollama_integration.ai_integration import find_similar_columns, get_query_embedding
+from src.core.config import EMBEDDED_SCHEMA_FILE, FAISS_INDEX_FILE
 import numpy as np
 
 logger = logging.getLogger(__name__)

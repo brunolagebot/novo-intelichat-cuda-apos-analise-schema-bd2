@@ -12,19 +12,17 @@ from collections import defaultdict
 import fdb # Para conexão direta
 import streamlit as st # Para st.secrets
 
-# --- Adiciona o diretório raiz ao sys.path --- #
-script_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(script_dir)
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-# --- FIM Adição ao sys.path --- #
+# Adiciona o diretório raiz ao sys.path para permitir importações de src
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(ROOT_DIR)
 
-# Importações do projeto
-import src.core.config as config
-from src.core.logging_config import setup_logging
-# REMOVIDO: from src.core.data_loader import load_technical_schema
-# REMOVIDO: from src.core.analysis import analyze_key_structure
-from src.utils.json_helpers import save_json
+from src.core.config import (
+    TECHNICAL_SCHEMA_FILE,
+    KEY_ANALYSIS_RESULTS_FILE
+)
+# REMOVIDO: from src.core.analysis import analyze_key_structure # Movido
+# from src.analysis.analysis import analyze_key_structure # Atualizado (ainda comentado)
+from src.utils.json_helpers import load_json, save_json
 
 # Configurar logging
 setup_logging()

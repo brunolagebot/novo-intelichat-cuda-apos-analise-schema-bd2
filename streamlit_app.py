@@ -21,15 +21,23 @@ import src.core.config as config # ATUALIZADO: Importa configurações da pasta 
 # NOVO: Importa funções de carregamento
 from src.core.data_loader import load_and_process_data, load_metadata, load_overview_counts, load_technical_schema
 # NOVO: Importa outras funções core (serão removidas/refatoradas depois)
-from src.core.ai_integration import generate_ai_description, build_faiss_index, get_query_embedding, handle_embedding_toggle
 from src.core.metadata_logic import get_type_explanation, find_existing_info, get_column_concept, apply_heuristics_globally, populate_descriptions_from_keys, compare_metadata_changes, save_metadata
-from src.core.db_utils import fetch_latest_nfs_timestamp, fetch_sample_data
-from src.core.analysis import generate_documentation_overview, analyze_key_structure
+from src.database.db_utils import fetch_latest_nfs_timestamp, fetch_sample_data
+from src.analysis.analysis import generate_documentation_overview, analyze_key_structure
 from ui.sidebar import display_sidebar # NOVO: Importa função da sidebar
 from ui.overview_page import display_overview_page # NOVO: Importa função Visão Geral
 from ui.edit_page import display_edit_page # NOVO: Importa função Editar Metadados
 from ui.analysis_page import display_analysis_page # NOVO: Importa função Análise
 from ui.chat_page import display_chat_page # NOVO: Importa função Chat
+from src.ollama_integration.ai_integration import (
+    # check_ollama_connection, # Removido, não encontrado
+    # get_embedding, # Removido, importado separadamente ou via try/except
+    generate_ai_description,
+    build_faiss_index,
+    get_query_embedding,
+    handle_embedding_toggle
+) # Atualizado
+import ollama # NOVO: Importar ollama
 
 # NOVO: Configura o logging ANTES de qualquer outra coisa
 from src.core.logging_config import setup_logging # ATUALIZADO
@@ -40,10 +48,6 @@ logger = logging.getLogger(__name__)
 
 # NOVO: Tentar importar a função de chat (lidar com erro se não existir)
 try:
-    from src.ollama_integration.client import chat_completion
-    # NOVO: Tentar importar função de embedding
-    try:
-        from src.ollama_integration.client import get_embedding
         OLLAMA_EMBEDDING_AVAILABLE = True
         logger.info("Função de embedding Ollama (get_embedding) carregada.")
     except ImportError:
@@ -55,18 +59,26 @@ try:
 
     OLLAMA_AVAILABLE = True
     logger.info("Integração Ollama carregada com sucesso.")
-except ImportError:
-    OLLAMA_AVAILABLE = False
-    logger.warning("src.ollama_integration.client não encontrado. Funcionalidades de IA estarão desabilitadas.")
-    # Define uma função dummy para evitar erros NameError
-    def chat_completion(messages, stream=False):
-        st.error("Integração Ollama não configurada/encontrada.")
-        return None
+
+# NOVO: Instanciar cliente Ollama e obter funções
+try:
+    ollama_client = ollama.Client()
+    # Verifica se o cliente responde
+    ollama_client.list() 
+    chat_completion = ollama_client.chat # Atribui a função
+    get_embedding = ollama_client.embeddings # Garante que get_embedding também venha do cliente
+    logger.info("Cliente Ollama instanciado e funções atribuídas.")
 except Exception as e:
+    logger.error(f"Falha ao instanciar ou conectar ao cliente Ollama: {e}. Funções de IA podem não funcionar.")
     OLLAMA_AVAILABLE = False
-    logger.error(f"Erro inesperado ao importar Ollama: {e}")
-    def chat_completion(messages, stream=False):
-        st.error(f"Erro na integração Ollama: {e}")
+    # Define funções dummy para evitar NameErrors posteriores
+    def chat_completion(*args, **kwargs):
+        logger.error("Cliente Ollama indisponível.")
+        st.error("Erro: Cliente Ollama indisponível para chat.")
+        return None
+    def get_embedding(*args, **kwargs):
+        logger.error("Cliente Ollama indisponível.")
+        st.error("Erro: Cliente Ollama indisponível para embeddings.")
         return None
 
 # CONSTANTES MOVIDAS PARA config.py
@@ -164,6 +176,7 @@ elif app_mode == "Editar Metadados":
 
 elif app_mode == "Análise":
     # Chama a função da página de Análise
+    # A página busca a análise do st.session_state, não precisa passar como argumento
     display_analysis_page(technical_schema_data=technical_schema_data)
 
 elif app_mode == "Chat com Schema":

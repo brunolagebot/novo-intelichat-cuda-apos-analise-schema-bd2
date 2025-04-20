@@ -1,4 +1,11 @@
 # scripts/extract_metadata_keys.py
+"""Script para extrair conjuntos específicos de chaves de metadados
+(descrições AI e metadados manuais) de seus respectivos arquivos JSON
+e combiná-los em um único arquivo JSON de saída.
+
+Útil para criar um snapshot focado de certos metadados.
+"""
+
 import json
 import os
 import sys

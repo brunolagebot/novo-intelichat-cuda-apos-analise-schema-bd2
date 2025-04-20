@@ -1,3 +1,8 @@
+"""Script para converter o schema JSON combinado em um DataFrame Pandas achatado
+e salvá-lo como um arquivo CSV.
+
+Utiliza uma função do módulo `src.core.dataframe_generator` para realizar a conversão.
+"""
 import pandas as pd
 import json
 import os
@@ -22,6 +27,7 @@ DEFAULT_INPUT_FILE = os.path.join(project_root, 'data', 'combined_schema_details
 DEFAULT_OUTPUT_FILE = os.path.join(project_root, 'data', 'schema_dataframe.csv')
 
 def main():
+    """Função principal: parseia argumentos, carrega JSON, gera DataFrame e salva CSV."""
     # Usa aspas simples para a descrição e formata argumentos
     parser = argparse.ArgumentParser(
         description='Gera um DataFrame CSV achatado a partir do schema JSON combinado.'

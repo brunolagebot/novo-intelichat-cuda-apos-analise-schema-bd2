@@ -4,6 +4,13 @@
 """
 Script unificado para extrair o schema técnico completo do banco de dados Firebird,
 incluindo estrutura, constraints, defaults e amostras de dados, salvando em JSON.
+
+**IMPORTANTE:**
+- Execute este script como um módulo a partir da raiz do projeto:
+  `python -m scripts.data_preparation.extract_technical_schema`
+- A execução, especialmente a etapa de amostragem, pode ser demorada (horas).
+- Verifique os logs para erros de amostragem (DBError, charmap, etc.) que podem ocorrer
+  em colunas/views específicas, mas o script tentará continuar.
 """
 
 import os
@@ -18,6 +25,7 @@ from collections import defaultdict
 import fdb
 import streamlit as st
 import concurrent.futures # << NOVO
+from dotenv import load_dotenv # << NOVO
 
 # --- Adiciona o diretório raiz ao sys.path --- #
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -35,9 +43,9 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 # --- Constantes ---
-OUTPUT_JSON_FILE = "data/processed/technical_schema_from_db.json" # Nome do arquivo de saída
+OUTPUT_JSON_FILE = "data/metadata/technical_schema_from_db.json" # <-- CORRIGIDO para /metadata/
 SAMPLE_SIZE = 50 # Número de amostras distintas a buscar por coluna
-MAX_WORKERS_FOR_SAMPLING = 10 # << NOVO: Número de threads para busca de amostras
+MAX_WORKERS_FOR_SAMPLING = 15 # << ALTERADO: Ajustado para 15 workers
 
 # --- Mapeamento de Tipos Firebird (Simplificado) ---
 # Baseado em https://firebirdsql.org/refdocs/langrefupd25-system-tables-rdb-fields.html#langrefupd25-systables-rdb-flds-type
@@ -121,32 +129,42 @@ def parse_default_value(default_source):
     """Tenta extrair o valor default da string RDB$DEFAULT_SOURCE."""
     if default_source is None:
         return None
-    default_source = default_source.strip().upper()
-    if default_source.startswith("DEFAULT "):
-        val_str = default_source[len("DEFAULT "):].strip()
+    # Removido strip().upper() para preservar case original se necessário
+    default_source_clean = default_source.strip()
+    # Melhorar a regex para capturar o valor após DEFAULT,
+    # independentemente de espaços extras ou casing
+    match = re.match(r"^DEFAULT\s+(.*)", default_source_clean, re.IGNORECASE)
+    if match:
+        val_str = match.group(1).strip()
         # Tenta identificar tipos comuns
-        if val_str == 'NULL':
+        if val_str.upper() == 'NULL':
             return None
-        if val_str.startswith("'") and val_str.endswith("'"):
-            return val_str[1:-1] # Remove aspas simples
-        if val_str.startswith("\"") and val_str.endswith("\""):
-            return val_str[1:-1] # Remove aspas duplas (menos comum)
-        if re.match(r'^-?\d+$', val_str): # Inteiro
-            try: return int(val_str)
-            except ValueError: pass
-        if re.match(r'^-?\d*\.\d+$', val_str): # Decimal/Float
-            try: return float(val_str) # Ou decimal.Decimal(val_str)
-            except ValueError: pass
+        # Lida com aspas simples e duplas
+        if (val_str.startswith("'") and val_str.endswith("'")) or \
+           (val_str.startswith('"') and val_str.endswith('"')):
+            return val_str[1:-1] # Remove aspas
+        # Verifica se é um número (inteiro, decimal, com sinal)
+        if re.match(r'^-?(\d+\.?\d*|\.\d+)$', val_str):
+            try: # Tenta converter para int se não tiver ponto decimal
+                if '.' not in val_str:
+                    return int(val_str)
+                else:
+                    # Mantém como string para decimais para evitar perda de precisão com float
+                    # Poderia usar decimal.Decimal(val_str) se precisão exata for crucial
+                    return val_str 
+            except ValueError:
+                pass # Se falhar, retorna a string original
         # Outros casos (ex: CURRENT_TIMESTAMP, etc.) podem precisar de tratamento
         return val_str # Retorna a string original se não reconhecer
-    return None # Não começa com 'DEFAULT '
+    return None # Não encontrou padrão 'DEFAULT ...'
 
 def map_fb_type(type_code, sub_type, scale):
     """Mapeia códigos de tipo Firebird para nomes legíveis."""
     if type_code == 261: # BLOB
         # Poderia detalhar subtipo (0=Segmented, 1=Text, etc.) se necessário
-        return "BLOB"
-    if type_code in (7, 8, 16) and scale is not None and scale < 0: 
+        # Mapeia BLOB SUB_TYPE 1 para TEXT para clareza
+        return "TEXT" if sub_type == 1 else "BLOB"
+    if type_code in (7, 8, 16) and scale is not None and scale < 0:
         # Escala negativa indica NUMERIC/DECIMAL
         # A precisão está em FIELD_PRECISION (não incluído aqui ainda)
         return "NUMERIC" # Ou DECIMAL
@@ -157,12 +175,19 @@ def convert_to_json_serializable(value):
     if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
         return value.isoformat()
     if isinstance(value, decimal.Decimal):
-        return float(value) # Ou str(value) para precisão exata
+        return str(value) # Usar string para preservar precisão decimal
     if isinstance(value, bytes): # Pode vir de BLOBs se buscados ou certos CHARSETS
         try:
-            return value.decode('utf-8', errors='replace') # Tenta decodificar como texto
-        except: 
-            return "<binary_data>"
+            # Tenta decodificar como UTF-8 primeiro, depois fallback para replace
+            return value.decode('utf-8')
+        except UnicodeDecodeError:
+            try:
+                # Tenta Latin-1 como fallback comum
+                return value.decode('latin-1')
+            except UnicodeDecodeError:
+                 return value.decode('utf-8', errors='replace') # Último recurso
+        except Exception:
+            return "<binary_data_error>"
     # Adicionar outros tipos conforme necessário
     return value
 
@@ -170,21 +195,19 @@ def fetch_column_samples(db_params, table_name, column_name, column_type):
     """Busca amostras de dados para uma coluna (THREAD-SAFE). Abre e fecha conexão própria."""
     # Extrai parâmetros de conexão
     db_path, db_user, db_password, db_charset = db_params
-    
-    # Não busca amostras para BLOBs
-    if column_type == "BLOB":
-        # logger.debug não é thread-safe por padrão, evitar logging intensivo dentro da thread
-        # print(f"DEBUG [Thread]: Pulando BLOB {table_name}.{column_name}") # Usar print para debug rápido em threads
-        return table_name, column_name, [] # Retorna identificadores + resultado
-        
-    # print(f"DEBUG [Thread]: Buscando amostra para {table_name}.{column_name}")
+
+    # Não busca amostras para BLOBs/TEXT
+    if column_type in ["BLOB", "TEXT"]:
+        return table_name, column_name, [] # Retorna identificadores + resultado vazio
+
     samples = []
     conn = None
     cursor = None
     try:
         # Conecta ao DB DENTRO da thread
-        conn = fdb.connect(dsn=db_path, user=db_user, password=db_password, charset=db_charset)
+        conn = fdb.connect(database=db_path, user=db_user, password=db_password, charset=db_charset)
         cursor = conn.cursor()
+        # -- Correção: Adicionar aspas duplas ao nome da coluna também --
         sql = f'SELECT FIRST {SAMPLE_SIZE} DISTINCT "{column_name}" FROM "{table_name}" WHERE "{column_name}" IS NOT NULL'
         cursor.execute(sql)
         results = cursor.fetchall()
@@ -192,22 +215,26 @@ def fetch_column_samples(db_params, table_name, column_name, column_type):
             samples = [convert_to_json_serializable(row[0]) for row in results]
         else:
             samples = []
-            
+
+    except fdb.OperationalError as e:
+        # Erros operacionais comuns (ex: tabela não existe, coluna não existe)
+        logger.warning(f"[Thread Sample OpError] {table_name}.{column_name}: {e}")
+        samples = None # Indica erro
     except fdb.Error as e:
-        # Logar warnings ainda é útil, mas ser conciso
-        logger.warning(f"[Thread Sample Error] DB Error {table_name}.{column_name}: {e.sqlcode if hasattr(e, 'sqlcode') else e}")
-        samples = None 
+        # Outros erros de DB
+        logger.warning(f"[Thread Sample DBError] {table_name}.{column_name}: {e.sqlcode if hasattr(e, 'sqlcode') else e}")
+        samples = None
     except Exception as e:
-        logger.warning(f"[Thread Sample Error] Other Error {table_name}.{column_name}: {e}")
+        logger.warning(f"[Thread Sample OtherError] {table_name}.{column_name}: {e}")
         samples = None
     finally:
-        if cursor: 
+        if cursor:
             try: cursor.close()
             except: pass
-        if conn: 
+        if conn:
             try: conn.close()
             except: pass
-            
+
     # Retorna identificadores para facilitar a correspondência no final
     return table_name, column_name, samples
 
@@ -453,8 +480,9 @@ def extract_full_schema_from_db(conn, db_params):
         return None
 
 def main():
-    """Função principal para extrair schema completo e salvar."""
-    logger.info(f"--- Iniciando Script de Extração de Schema Técnico Completo (DB -> {OUTPUT_JSON_FILE}) ---")
+    """Função principal para executar a extração do schema e salvar o resultado."""
+    load_dotenv() # Carrega variáveis de .env se existir
+    logger.info("--- Iniciando Script: Extração de Schema Técnico Detalhado --- ")
     start_time = time.time()
     conn = None
     full_schema = None
@@ -462,22 +490,33 @@ def main():
 
     # 1. Conectar ao DB e guardar params
     try:
-        db_path = config.DEFAULT_DB_PATH
-        db_user = config.DEFAULT_DB_USER
-        db_charset = config.DEFAULT_DB_CHARSET
-        try:
-            db_password = st.secrets["database"]["password"]
-            # Guarda os parâmetros para passar às threads
-            db_params = (db_path, db_user, db_password, db_charset) 
-        except KeyError:
-             logger.error("Senha não encontrada em st.secrets['database']['password'].")
-             return
-        except Exception as e:
-            logger.error(f"Erro ao acessar st.secrets: {e}.")
+        # --- ATUALIZADO: Ler tudo do ENV --- #
+        db_host = os.getenv("FIREBIRD_HOST", "localhost")
+        db_port = int(os.getenv("FIREBIRD_PORT", "3050"))
+        db_path = os.getenv("FIREBIRD_DB_PATH")
+        db_user = os.getenv("FIREBIRD_USER", "SYSDBA")
+        db_password = os.getenv("FIREBIRD_PASSWORD")
+        db_charset = os.getenv("FIREBIRD_CHARSET", "WIN1252")
+        
+        if not db_path or not db_password:
+            logger.error("Erro: Variáveis FIREBIRD_DB_PATH ou FIREBIRD_PASSWORD não definidas no .env ou ambiente.")
             return
+        
+        # Guarda os parâmetros para passar às threads
+        db_params = (db_path, db_user, db_password, db_charset)
+        # --- FIM ATUALIZAÇÃO ---
 
-        logger.info(f"Tentando conectar ao DB (conexão principal): {db_path}...")
-        conn = fdb.connect(dsn=db_path, user=db_user, password=db_password, charset=db_charset)
+        logger.info(f"Tentando conectar ao DB (conexão principal): {db_path} (Host: {db_host}:{db_port})...") # Log atualizado
+        # --- ATUALIZADO: Usar variáveis lidas do ENV na conexão --- #
+        conn = fdb.connect(
+            host=db_host,
+            port=db_port,
+            database=db_path,
+            user=db_user,
+            password=db_password,
+            charset=db_charset
+        )
+        # --- FIM ATUALIZAÇÃO ---
         logger.info("Conexão principal com o banco de dados estabelecida.")
 
         # 2. Extrair Schema Completo (passando db_params)
@@ -494,28 +533,24 @@ def main():
         # Fecha APENAS a conexão principal
         if conn:
             try:
-                if not conn.closed: conn.close(); logger.info("Conexão principal DB fechada.")
-            except Exception as e: logger.error(f"Erro ao fechar conexão principal DB: {e}")
-
-    # 3. Salvar Schema se extraído com sucesso
-    if full_schema:
-        logger.info(f"Salvando schema técnico completo em {OUTPUT_JSON_FILE}...")
-        # Garante que o diretório de saída exista
-        output_dir = os.path.dirname(OUTPUT_JSON_FILE)
-        if output_dir: os.makedirs(output_dir, exist_ok=True)
-            
-        save_start_time = time.time()
-        # Usar a função save_json que lida com erros
-        if save_json(full_schema, OUTPUT_JSON_FILE):
-            save_end_time = time.time()
-            logger.info(f"Schema técnico salvo com sucesso em {save_end_time - save_start_time:.2f}s.")
-        else:
-            logger.error(f"Falha ao salvar schema técnico em {OUTPUT_JSON_FILE}.")
-    else:
-        logger.error("Não foi possível extrair o schema técnico do banco de dados. Nenhum arquivo foi salvo.")
+                conn.close()
+            except Exception as e:
+                logger.error(f"Erro ao fechar conexão principal: {e}")
 
     end_time = time.time()
-    logger.info(f"--- Script Concluído em {end_time - start_time:.2f} segundos ---")
+    logger.info(f"Extração completa do schema (incluindo amostras) concluída em {end_time - start_time:.2f}s")
+    return full_schema
 
 if __name__ == "__main__":
-    main() 
+    # <<< CORREÇÃO: Capturar o resultado e salvar em JSON >>>
+    final_schema_data = main()
+    if final_schema_data:
+        logger.info(f"Salvando schema técnico completo em {OUTPUT_JSON_FILE}...")
+        try:
+            save_json(final_schema_data, OUTPUT_JSON_FILE)
+            logger.info("Schema salvo com sucesso.")
+        except Exception as e:
+             logger.error(f"Erro ao salvar o schema no arquivo JSON '{OUTPUT_JSON_FILE}': {e}", exc_info=True)
+    else:
+        logger.error("Não foi possível gerar o schema técnico (main retornou None). Verifique os logs.")
+    # <<< FIM CORREÇÃO >>> 

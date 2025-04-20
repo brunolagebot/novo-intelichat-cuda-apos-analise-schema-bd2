@@ -5,16 +5,42 @@ import datetime
 import logging
 import re
 import pandas as pd
+from dotenv import load_dotenv
+import os
 
 logger = logging.getLogger(__name__)
 
 # REMOVIDO CACHE - Buscar sob demanda
-def fetch_latest_nfs_timestamp(db_path, user, password, charset):
+def fetch_latest_nfs_timestamp(db_path_arg, user_arg, password_arg, charset_arg):
     """Busca a data/hora da última NFS emitida da VIEW_DASH_NFS."""
+    # --- NOVO: Carregar .env e Ler parâmetros do ambiente --- #
+    load_dotenv()
+    db_host = os.getenv("FIREBIRD_HOST", "localhost")
+    db_port = int(os.getenv("FIREBIRD_PORT", "3050"))
+    db_path = os.getenv("FIREBIRD_DB_PATH")
+    db_user = os.getenv("FIREBIRD_USER", "SYSDBA")
+    db_password = os.getenv("FIREBIRD_PASSWORD")
+    db_charset = os.getenv("FIREBIRD_CHARSET", "WIN1252")
+    
+    if not db_path or not db_password:
+        error_msg = "Erro Config: Variáveis FIREBIRD_DB_PATH ou FIREBIRD_PASSWORD não definidas."
+        logger.error(error_msg)
+        return error_msg # Retorna erro para UI
+    # --- FIM NOVO ---
+    
     conn = None
-    logger.info("Tentando buscar timestamp da última NFS...")
+    logger.info(f"Tentando buscar timestamp da última NFS em {db_path} (Host: {db_host}:{db_port})...") # Log atualizado
     try:
-        conn = fdb.connect(dsn=db_path, user=user, password=password, charset=charset)
+        # --- ATUALIZADO: Usar variáveis lidas do ENV --- #
+        conn = fdb.connect(
+            host=db_host, 
+            port=db_port,
+            database=db_path, 
+            user=db_user, 
+            password=db_password, 
+            charset=db_charset
+        )
+        # --- FIM ATUALIZAÇÃO ---
         cur = conn.cursor()
         # Query para buscar a data e hora mais recentes
         sql = '''

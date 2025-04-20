@@ -8,10 +8,12 @@ from collections import OrderedDict
 import time
 import copy
 import faiss # Importar faiss aqui
+from functools import lru_cache
 
 # Importar de outros módulos core
 import src.core.config as config
-from src.utils.json_helpers import load_json # Mantém
+from src.utils.json_helpers import load_json, save_json # Mantém
+from src.analysis.analysis import analyze_key_structure # <-- ADICIONADO # Atualizado
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +41,9 @@ def load_technical_schema(file_path):
         logger.error(f"Erro inesperado ao carregar schema técnico {file_path}: {e}", exc_info=True)
         return None
 
-@st.cache_data # Cache para evitar recarregar a cada interação
+# @st.cache_data # <<< TEMPORARIAMENTE REMOVIDO PARA DEBUG
 def load_metadata(file_path):
-    logger.info(f"---> EXECUTANDO load_metadata para: {file_path}") # Log de diagnóstico
+    logger.info("---> EXECUTANDO load_metadata (SEM CACHE) para: {file_path}") # Log de diagnóstico
     """Carrega o arquivo JSON de metadados."""
     if not os.path.exists(file_path):
         # Log warning em vez de error, pois pode ser iniciado vazio
@@ -115,6 +117,13 @@ def load_key_analysis_results(file_path):
         "composite_fk_details": {},
         "column_roles": {}
     }
+    
+    # --- NOVO: Verificar se file_path é None --- #
+    if file_path is None:
+        logger.warning("Nenhum arquivo de análise de chaves fornecido. Usando resultados vazios.")
+        return default_result
+    # --- FIM NOVO ---
+    
     if not os.path.exists(file_path):
         logger.warning(f"Arquivo de resultados da análise de chaves não encontrado em '{file_path}'. Usando resultados vazios.")
         return default_result
@@ -145,6 +154,10 @@ def load_key_analysis_results(file_path):
 # --- Função Principal de Carregamento e Processamento --- #
 
 def load_and_process_data():
+    # --- Cache foi removido de load_metadata, clear() não é mais necessário/válido --- #
+    # load_metadata.clear()
+    # logger.info("Cache de load_metadata limpo no início de load_and_process_data.")
+    # ---------------------------------------------------------------------------- #
     # --- Configuração da Barra de Progresso e Tempos --- #
     total_steps = 6
     progress_bar = st.progress(0.0, text="Iniciando carregamento...")
@@ -170,17 +183,19 @@ def load_and_process_data():
     # --- Determinar qual schema carregar inicialmente --- #
     use_embeddings_on_load = st.session_state.get('use_embeddings', False)
     if use_embeddings_on_load:
+        # Se usar embeddings, carrega o arquivo que já contém os embeddings
         schema_file_to_load = config.EMBEDDED_SCHEMA_FILE
         faiss_index_file_to_load = config.FAISS_INDEX_FILE
-        analysis_file_to_load = config.KEY_ANALYSIS_RESULTS_FILE
+        analysis_file_to_load = config.KEY_ANALYSIS_RESULTS_FILE # Assumindo que a análise foi salva com base no schema com embeddings
         logger.info(f"Carregamento inicial: Usando schema com embeddings ({schema_file_to_load}), índice FAISS ({faiss_index_file_to_load}) e análise pré-calculada ({analysis_file_to_load}).")
     else:
-        schema_file_to_load = config.TECHNICAL_SCHEMA_FILE # Ajuste se o nome for diferente
+        # Se NÃO usar embeddings, carrega o schema mesclado mais recente (técnico + manual + AI)
+        schema_file_to_load = config.MERGED_SCHEMA_FOR_EMBEDDINGS_FILE 
         faiss_index_file_to_load = None # Não carrega FAISS se não usar embeddings
         analysis_file_to_load = None # Não carrega análise se não usar embeddings
-        logger.info(f"Carregamento inicial: Usando schema base ({schema_file_to_load}).")
+        logger.info(f"Carregamento inicial: Usando schema mesclado mais recente ({schema_file_to_load}).")
 
-    # --- Etapa 1: Carregar Schema (Base ou com Embeddings) --- #
+    # --- Etapa 1: Carregar Schema (Mesclado ou com Embeddings) --- #
     step_name = "Carregando Schema"
     start_time_step = time.time()
     progress_bar.progress(float(current_step)/total_steps, text=f"({current_step+1}/{total_steps}) Executando: {step_name}...")
@@ -188,6 +203,9 @@ def load_and_process_data():
     if schema_loaded is None:
         st.error(f"Falha crítica: Não foi possível carregar o arquivo de schema em '{schema_file_to_load}'.")
         st.stop()
+    # --- NOVO: Armazenar path do schema carregado ---
+    st.session_state.loaded_schema_file = schema_file_to_load
+    # --- FIM NOVO ---
     update_progress(step_name, start_time_step)
 
     # --- Etapa 2: Carregar Metadados --- #
@@ -195,8 +213,15 @@ def load_and_process_data():
     start_time_step = time.time()
     progress_bar.progress(float(current_step)/total_steps, text=f"({current_step+1}/{total_steps}) Executando: {step_name}...")
     metadata_dict = load_metadata(config.METADATA_FILE)
-    if metadata_dict is None: # load_metadata agora retorna {} em caso de erro/não encontrado
-        metadata_dict = {}
+    
+    # --- ADICIONADO: Verificação Estrita --- #
+    if not metadata_dict or not isinstance(metadata_dict, dict):
+        logger.error("Falha crítica ao carregar metadados ou metadados vazios. Interrompendo.")
+        st.error(f"Erro Crítico: Não foi possível carregar dados válidos de {config.METADATA_FILE}. Verifique o arquivo e os logs.")
+        st.stop()
+    # --- FIM Verificação Estrita --- #
+        
+    logger.info(f"Metadados carregados com sucesso. Chaves de nível superior: {list(metadata_dict.keys())}")
     update_progress(step_name, start_time_step)
 
     # --- Etapa 3: Carregar Contagens da Visão Geral --- #
@@ -225,18 +250,29 @@ def load_and_process_data():
     step_name = "Analisando Estrutura de Chaves"
     start_time_step = time.time()
     progress_bar.progress(float(current_step)/total_steps, text=f"({current_step+1}/{total_steps}) Executando: {step_name}...")
-    # A função analyze_key_structure já está cacheada em analysis.py
     key_analysis_result = None # Inicializa
     if analysis_file_to_load:
-        progress_bar.progress(float(current_step)/total_steps, text=f"({current_step+1}/{total_steps}) Executando: {step_name}...")
-        key_analysis_result = load_key_analysis_results(analysis_file_to_load)
-        # load_key_analysis_results retorna default em caso de erro
+        progress_bar.progress(float(current_step)/total_steps, text=f"({current_step+1}/{total_steps}) Executando: {step_name} (Carregando pré-calculado)...")
+        # Tenta carregar do arquivo
+        loaded_analysis = load_key_analysis_results(analysis_file_to_load)
+        # Verifica se o carregamento foi bem-sucedido e se é um dicionário (formato esperado do JSON)
+        if loaded_analysis and isinstance(loaded_analysis, dict):
+            # Se carregou com sucesso, DESEMPACOTA na ordem correta da tupla esperada
+            key_analysis_result = (
+                loaded_analysis.get("composite_pk_tables", {}),
+                loaded_analysis.get("junction_tables", {}),
+                loaded_analysis.get("composite_fk_details", {}),
+                loaded_analysis.get("column_roles", {})
+            )
+            logger.info("Análise de chaves carregada do arquivo e formatada como tupla.")
+        else:
+            logger.warning(f"Falha ao carregar ou formato inválido do arquivo de análise {analysis_file_to_load}. Calculando dinamicamente...")
+            key_analysis_result = analyze_key_structure(schema_loaded)
     else:
-        logger.info("Análise de chaves pré-calculada não será carregada.")
-        # Opcional: Calcular análise para schema base se necessário aqui?
-        # key_analysis_result = analyze_key_structure(schema_loaded) # Mas isso pode ser lento
-        # Por enquanto, deixamos None se não usar embeddings
-        key_analysis_result = load_key_analysis_results(None) # Chama com None para obter default vazio
+        logger.info("Análise de chaves pré-calculada não será carregada. Calculando dinamicamente...")
+        progress_bar.progress(float(current_step)/total_steps, text=f"({current_step+1}/{total_steps}) Executando: {step_name} (Calculando dinamicamente)...")
+        # Calcula dinamicamente se não estiver usando embeddings
+        key_analysis_result = analyze_key_structure(schema_loaded)
         
     update_progress(step_name, start_time_step)
 
@@ -244,35 +280,30 @@ def load_and_process_data():
     step_name = "Inicializando Estado da Sessão"
     start_time_step = time.time()
     progress_bar.progress(float(current_step)/total_steps, text=f"({current_step+1}/{total_steps}) Executando: {step_name}...")
-
-    # Inicializa estados
-    if 'auto_save_enabled' not in st.session_state:
-        st.session_state.auto_save_enabled = False
-    if 'last_save_time' not in st.session_state:
-        st.session_state.last_save_time = time.time()
-    if 'use_embeddings' not in st.session_state:
-        st.session_state.use_embeddings = False
-    if 'initial_metadata' not in st.session_state or st.session_state.get("_force_reload", False):
-        logger.info("Armazenando estado inicial dos metadados (ou forçando reload).")
-        try:
-            st.session_state.initial_metadata = copy.deepcopy(metadata_dict)
-        except Exception as e:
-            logger.error(f"Erro ao fazer deepcopy dos metadados iniciais: {e}")
-            st.session_state.initial_metadata = {}
-        st.session_state._force_reload = False # Reseta o flag
-
-    # Garante que o estado use_embeddings está sincronizado com o que foi carregado
-    st.session_state.use_embeddings = use_embeddings_on_load
-
-    # Armazena dados carregados no estado da sessão
+    
+    # --- MODIFICADO: Atualizar sempre o estado principal, inicializar o 'initial' condicionalmente --- #
+    # Sempre atualiza o estado principal com os dados carregados do arquivo/cache
     st.session_state.metadata = metadata_dict
     st.session_state.technical_schema = schema_loaded
-    st.session_state.overview_counts = overview_counts if overview_counts else {}
-    st.session_state.faiss_index = faiss_index # Salva o índice carregado (ou None)
-    st.session_state.index_to_key_map = index_to_key_map # Salva o mapa (ou None)
+    st.session_state.overview_counts = overview_counts
+    st.session_state.faiss_index = faiss_index
+    st.session_state.index_to_key_map = index_to_key_map
     st.session_state.key_analysis = key_analysis_result
+    logger.debug("Estados principais (metadata, technical_schema, etc.) atualizados na sessão.")
 
-    # Inicializa estados da UI (ainda precisam ser acessados pelo app principal)
+    # Guarda o estado inicial para comparação (APENAS se não existir ou se o save/reload resetou)
+    if 'initial_metadata' not in st.session_state:
+        try:
+            # Usar o estado atual da sessão, que acabou de ser atualizado
+            st.session_state.initial_metadata = copy.deepcopy(st.session_state.metadata)
+            logger.info("Estado 'initial_metadata' inicializado/atualizado na sessão.")
+        except Exception as e:
+            logger.error(f"Erro ao fazer deepcopy para initial_metadata: {e}")
+            st.session_state.initial_metadata = {}
+    else:
+        logger.debug("Estado 'initial_metadata' já existe na sessão (preservado desde o último save/reload).")
+        
+    # Inicializa outras variáveis de estado se necessário (mantém a lógica anterior)
     if 'unsaved_changes' not in st.session_state:
         st.session_state.unsaved_changes = False
     if 'current_view' not in st.session_state:
@@ -298,7 +329,7 @@ def load_and_process_data():
                     logger.info("Senha do DB carregada da variável de ambiente FIREBIRD_PASSWORD.")
                 else:
                     logger.warning("Senha do DB não encontrada em st.secrets nem na env var FIREBIRD_PASSWORD.")
-                    db_password_loaded = ""
+                    db_password_loaded = "" # Evita None
             else:
                 logger.info("Senha do DB carregada de st.secrets.")
             st.session_state.db_password = db_password_loaded
@@ -309,6 +340,36 @@ def load_and_process_data():
         st.session_state.db_charset = config.DEFAULT_DB_CHARSET
     if 'latest_db_timestamp' not in st.session_state:
         st.session_state.latest_db_timestamp = None
+    if 'last_save_time' not in st.session_state:
+        st.session_state.last_save_time = 0
+    if 'auto_save_enabled' not in st.session_state:
+        st.session_state.auto_save_enabled = False # Ou True se quiser default
+    # --- FIM MODIFICADO --- #
+    
+    # --- Adicionado: Garantir que as credenciais DB estejam no estado --- #
+    if 'db_path' not in st.session_state:
+        st.session_state.db_path = config.DEFAULT_DB_PATH
+    if 'db_user' not in st.session_state:
+        st.session_state.db_user = config.DEFAULT_DB_USER
+    if 'db_password' not in st.session_state:
+        try:
+            db_password_loaded = st.secrets.get("database", {}).get("password")
+            if not db_password_loaded:
+                db_password_loaded = os.getenv("FIREBIRD_PASSWORD")
+                if db_password_loaded:
+                    logger.info("Senha do DB carregada da variável de ambiente FIREBIRD_PASSWORD.")
+                else:
+                    logger.warning("Senha do DB não encontrada em st.secrets nem na env var FIREBIRD_PASSWORD.")
+                    db_password_loaded = "" # Evita None
+            else:
+                logger.info("Senha do DB carregada de st.secrets.")
+            st.session_state.db_password = db_password_loaded
+        except Exception as e:
+            logger.error(f"Erro ao tentar carregar senha do DB de st.secrets/env var: {e}")
+            st.session_state.db_password = ""
+    if 'db_charset' not in st.session_state:
+        st.session_state.db_charset = config.DEFAULT_DB_CHARSET
+    # --- Fim Credenciais DB --- #
 
     update_progress(step_name, start_time_step)
 

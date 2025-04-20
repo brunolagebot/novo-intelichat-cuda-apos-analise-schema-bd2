@@ -18,18 +18,24 @@ Esta aplicação Streamlit serve como uma ferramenta para visualizar, editar e e
 
 A aplicação depende de arquivos JSON pré-gerados que contêm a estrutura do banco de dados e, opcionalmente, embeddings vetoriais. O processo de geração geralmente envolve os seguintes scripts (localizados no diretório `scripts/`):
 
-1.  **`extract_schema.py`**: Conecta-se ao banco de dados Firebird e extrai a **estrutura técnica detalhada** em etapas:
-    *   Busca informações básicas de Tabelas e Views.
-    *   Para cada Tabela/View:
-        *   Busca metadados de colunas (tipo, nulidade, default, desc. técnica).
-        *   Tenta buscar **10 valores de exemplo (amostra)** para cada coluna (pode falhar para GTTs ou por permissão, gerando um aviso).
-        *   Busca Constraints (PK, FK, Unique).
-        *   Busca todos os Índices (usuário, sistema, PK, FK, Unique) com seus propósitos.
-    *   Calcula contagens de referência FK.
-    *   Salva o resultado completo em **`data/enhanced_technical_schema.json`**.
-    *   Exibe uma **barra de progresso por Tabela/View** processada durante a execução.
-2.  **`merge_schema_data.py`**: Combina o schema técnico extraído (geralmente lê `data/technical_schema_details.json` por padrão, mas pode ser adaptado para usar o `enhanced_...` se necessário) com os metadados manuais de `data/schema_metadata.json`. Adiciona validações e contagens, salvando em `data/combined_schema_details.json`. **Este é o arquivo usado pela aplicação Streamlit principal.**
-3.  **`generate_embeddings.py`** (Opcional): Carrega o `combined_schema_details.json`, gera embeddings vetoriais, e salva o resultado em `schema_with_embeddings.json` e `faiss_column_index.idx`.
+1.  **`scripts/data_preparation/extract_technical_schema.py`**:
+    *   **Propósito:** Conecta-se ao banco de dados Firebird e extrai a **estrutura técnica detalhada**, incluindo tabelas, views, colunas, tipos, constraints (PK/FK), valores default, descrições do DB e **amostras de dados** (limitadas por `SAMPLE_SIZE`).
+    *   **Execução:** Deve ser executado como um módulo a partir da raiz do projeto:
+        ```bash
+        python -m scripts.data_preparation.extract_technical_schema
+        ```
+    *   **Dependências:** Requer variáveis de ambiente ou segredos configurados (ver seção "Gerenciamento de Segredos").
+    *   **Importante:** A busca por amostras é feita em paralelo (usando `MAX_WORKERS_FOR_SAMPLING` definido no script, atualmente 15) e **pode ser muito demorada (horas)**, dependendo do tamanho do banco e da máquina. Erros de amostragem podem ocorrer (ver logs), mas o script tenta continuar.
+    *   **Saída:** Salva o resultado completo em **`data/metadata/technical_schema_from_db.json`**. Este arquivo serve como a base para enriquecimentos posteriores.
+
+2.  **`scripts/data_preparation/merge_metadata_for_embeddings.py`** (ou similar):
+    *   **Propósito:** Combina a estrutura técnica base (`technical_schema_from_db.json`) com metadados manuais (`metadata_schema_manual.json`) e/ou descrições geradas por IA (`ai_generated_descriptions...json`).
+    *   **Saída:** Gera o arquivo `merged_schema_for_embeddings.json` (ou similar), pronto para a geração de embeddings.
+
+3.  **`scripts/ai_tasks/generate_embeddings.py`** (Opcional):
+    *   **Propósito:** Carrega o schema mesclado (e.g., `merged_schema_for_embeddings.json`), gera embeddings vetoriais usando um modelo (via Ollama ou outra API) e salva o resultado em `schema_with_embeddings.json` e `faiss_column_index.idx`.
+
+*(Outros scripts mencionados anteriormente, como `extract_schema.py` ou `merge_schema_data.py`, podem ser legados ou ter propósitos específicos. A sequência acima representa o fluxo principal para obter o schema técnico e prepará-lo para embeddings).*
 
 ## Gerenciamento de Segredos (Secrets)
 
@@ -104,10 +110,51 @@ A aplicação utiliza o módulo `logging` padrão do Python para registrar infor
 
 A aplicação utiliza e gera diversos arquivos na pasta `data/`. É crucial entender o propósito e a origem de cada um:
 
-1.  **`technical_schema_from_db.json`** (Base Técnica Atual)
-    *   **Origem:** Gerado pelo script `scripts/extract_technical_schema.py` (ou similar que extraia do DB).
-    *   **Conteúdo:** Estrutura técnica detalhada extraída diretamente do banco de dados (tabelas, views, colunas, tipos, constraints, etc.). **Inclui campos pré-definidos (geralmente como `null`) para metadados manuais e de IA.**
-    *   **Uso:** Serve como a **base estrutural** para o processo de merge no script `scripts/merge_metadata_for_embeddings.py`.
+1.  **`data/metadata/technical_schema_from_db.json`** (Base Técnica Atual)
+    *   **Origem:** Gerado pelo script `scripts/data_preparation/extract_technical_schema.py`.
+    *   **Conteúdo:** Estrutura técnica detalhada extraída diretamente do banco de dados (tabelas, views, colunas, tipos, constraints (PK/FK), defaults, descrições do DB e amostras de dados limitadas). Inclui campos pré-definidos (inicializados como `null`) para metadados manuais e de IA.
+    *   **Estrutura Esperada:**
+        ```json
+        {
+          "NOME_DA_TABELA_OU_VIEW": {
+            "object_type": "TABLE" | "VIEW",
+            "description": "Descrição do objeto vinda do DB (ou null)",
+            "columns": [
+              {
+                "name": "NOME_DA_COLUNA",
+                "type": "TIPO_MAPEADO (VARCHAR, INTEGER, etc.)",
+                "nullable": true | false,
+                "default_value": "Valor default (string ou null)",
+                "description": "Descrição da coluna vinda do DB (ou null)",
+                "is_pk": true | false,
+                "is_fk": true | false,
+                "fk_references": { // Ou null se não for FK, pode ser lista se FK composta
+                  "references_table": "NOME_TABELA_PK",
+                  "references_column": "NOME_COLUNA_PK"
+                  // ... outros campos se FK composta
+                } | list | null,
+                "sample_values": [ /* amostras */ ] | null, // Amostras (ou null se erro/BLOB)
+                // Campos para enriquecimento futuro
+                "business_description": null,
+                "value_mapping_notes": null,
+                "ai_generated_description": null,
+                "ai_model_used": null,
+                "ai_generation_timestamp": null,
+                "text_for_embedding": null
+              },
+              // ... outras colunas
+            ],
+            // Chave _analysis adicionada pelo script
+            "_analysis": {
+                 "composite_pk_tables": [],
+                 "junction_tables": [],
+                 "fk_definitions": {}
+             }
+          },
+          // ... outras tabelas/views
+        }
+        ```
+    *   **Uso:** Serve como a **base estrutural** para o processo de merge no script `scripts/merge_metadata_for_embeddings.py` ou para uso direto se outros enriquecimentos não forem necessários.
 
 2.  **`metadata_schema_manual.json`** (Metadados Manuais)
     *   **Origem:** **Criado e atualizado pela interface da aplicação Streamlit (ou manualmente).** 
@@ -158,13 +205,16 @@ A aplicação utiliza e gera diversos arquivos na pasta `data/`. É crucial ente
 
 **(Arquivos Legados/Alternativos - Verificar necessidade)**
 
-*   **`technical_schema_details.json`**: Versão básica da extração técnica.
-*   **`enhanced_technical_schema.json`**: Versão mais completa da extração técnica (de `extract_schema.py`).
+*   **`technical_schema_details.json`**: Versão básica da extração técnica (provavelmente substituído por `technical_schema_from_db.json`).
+*   **`enhanced_technical_schema.json`**: Versão mais completa da extração técnica (de `extract_schema.py` - legado?).
 *   **`generated_schema_structure.json`**: Saída de `extract_new_schema_firebird.py` (pode ser redundante agora).
+*   **`merge_schema_data.py`**: Script legado para combinar schema técnico e manual para a UI (verificar se ainda necessário ou substituído pelo fluxo de embeddings).
+*   **`scripts/analyze_schema_completeness.py`**: Script removido.
+*   **`scripts/data_preparation/merge_enrich_schema.py`**: Script removido.
 
 **Ordem de Geração/Fluxo (Foco em Embeddings):**
 
-1.  Extração Técnica (`scripts/extract_technical_schema.py`) -> `data/metadata/technical_schema_from_db.json`
+1.  Extração Técnica (`scripts/data_preparation/extract_technical_schema.py`) -> `data/metadata/technical_schema_from_db.json`
 2.  Edição Manual (UI ou Direta) -> `data/metadata/metadata_schema_manual.json`
 3.  Geração IA (`scripts/generate_ai_descriptions.py`) -> `data/metadata/ai_generated_descriptions...json`
 4.  **Merge Final** (`scripts/merge_metadata_for_embeddings.py`) -> `data/processed/merged_schema_for_embeddings.json`
@@ -324,5 +374,16 @@ Exemplo:\
 ```bash\
 python scripts/generate-ai-description-openia.py --max_items 10\
 ```\
+
+## Diretrizes de Desenvolvimento
+
+*   **Comentários:** Todos os scripts Python criados devem incluir:
+    *   Um *docstring* no nível do arquivo explicando o propósito geral do script.
+    *   Um *docstring* para cada função definida, explicando o que ela faz, seus parâmetros e o que retorna.
+*   **Controle de Versão:** Utilize o Git para controle de versão. Faça commits pequenos e focados com mensagens claras.
+*   **Estrutura do Projeto:** Mantenha a estrutura de diretórios organizada conforme definido neste README e no roadmap.
+*   **Configuração:** Evite caminhos e configurações "hardcoded". Utilize o arquivo `src/core/config.py` para constantes e `st.secrets` ou variáveis de ambiente para dados sensíveis.
+*   **Refatoração:** Se um arquivo ou função se tornar muito longo ou complexo, divida-o em unidades menores e mais gerenciáveis.
+*   **Resumo da Execução:** Ao final da execução, cada script deve imprimir um resumo claro das suas ações no console (ex: número de itens processados, arquivos lidos/escritos, erros encontrados). Isso complementa os logs detalhados.
 
 <!-- Adicionar mais seções conforme necessário: Contribuição, Licença, etc. --> 

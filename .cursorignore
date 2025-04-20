@@ -1,5 +1,6 @@
 # Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)
 
+# Ambientes virtuais e cache
 .venv/
 .pytest_cache/
 __pycache__/
@@ -7,21 +8,71 @@ __pycache__/
 *.pyo
 *.egg-info/
 .git/
-results-llama3-8b-chat-schema-adapter/
-results-llama3-8b-chat-schema-adapter-v2/
-results-llama3-8b-chat-schema-adapter-v3/
-results-llama3-8b-chat-schema-adapter-v4/
-results-llama3-8b-chat-schema-adapter-v5/
-results-llama3-8b-chat-schema-adapter-v6/
-results-llama3-8b-chat-schema-adapter-v7/
 
-# Ignorar dados, logs e saídas grandes
+# Resultados de modelos e experimentos
+results-*/
+results-llama3-8b-chat-schema-adapter*/
+
+# Dados, logs e outputs
 data/
 archive/
-results-*/
 *.idx
 *.log
+logs/
+*.csv
+*.json
+!metadata_schema_manual.json
+*.parquet
+*.sqlite
+*.db
+*.h5
+*.pkl
+*.model
+*.bin
+*.ckpt
+*.pt
+*.pth
 
-# Ignorar configurações específicas do editor/IDE
+# Arquivos de build e distribuição
+build/
+dist/
+*.egg
+*.whl
+*.tar.gz
+*.zip
+
+# Configurações de IDE e editor
 .vscode/
 .idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Arquivos de ambiente e configuração local
+.env
+.env.*
+!.env.example
+*.local
+config.local.*
+
+# Diretórios de cache específicos
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Arquivos temporários
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+
+# Diretórios de output e resultados intermediários
+ai_outputs/
+embeddings/
+metadata_backups/
+processed/

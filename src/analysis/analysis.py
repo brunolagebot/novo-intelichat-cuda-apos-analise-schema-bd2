@@ -152,6 +152,8 @@ def generate_documentation_overview(technical_schema, metadata, overview_counts)
         object_meta = metadata.get(key_type, {}).get(name, {})
         object_columns_meta = object_meta.get('COLUMNS', {})
         obj_desc_exists = bool(object_meta.get('description', '').strip())
+        obj_desc_manual = object_meta.get('description', '').strip()
+        obj_desc_ai = tech_info.get('ai_description', '').strip()
         
         described_cols = 0
         noted_cols = 0
@@ -193,6 +195,8 @@ def generate_documentation_overview(technical_schema, metadata, overview_counts)
             'Objeto': name,
             'Tipo': object_type,
             'Descrição?': "✅" if obj_desc_exists else "❌",
+            'Descrição Manual': obj_desc_manual,
+            'Descrição IA': obj_desc_ai,
             'Total Colunas': total_cols,
             'Linhas (Cache)': row_count_display,
             'Contagem Em': timestamp_display,
@@ -206,7 +210,9 @@ def generate_documentation_overview(technical_schema, metadata, overview_counts)
     df_overview = pd.DataFrame(overview_data)
     if not df_overview.empty:
         df_overview['_Linhas_Raw'] = pd.to_numeric(df_overview['_Linhas_Raw'], errors='coerce')
-        cols_order = ['Objeto', 'Tipo', 'Descrição?', 'Total Colunas', 'Linhas (Cache)', 'Contagem Em',
+        cols_order = ['Objeto', 'Tipo', 'Descrição?', 'Total Colunas', 
+                      'Descrição Manual', 'Descrição IA',
+                      'Linhas (Cache)', 'Contagem Em',
                       'Col. Descritas', '% Descritas', 'Col. c/ Notas', '% c/ Notas']
         cols_order = [col for col in cols_order if col in df_overview.columns]
         df_overview = df_overview.sort_values(
@@ -216,7 +222,9 @@ def generate_documentation_overview(technical_schema, metadata, overview_counts)
         ).reset_index(drop=True)
         df_overview_display = df_overview[cols_order]
     else:
-        cols_order = ['Objeto', 'Tipo', 'Descrição?', 'Total Colunas', 'Linhas (Cache)', 'Contagem Em',
+        cols_order = ['Objeto', 'Tipo', 'Descrição?', 'Total Colunas', 
+                      'Descrição Manual', 'Descrição IA',
+                      'Linhas (Cache)', 'Contagem Em',
                       'Col. Descritas', '% Descritas', 'Col. c/ Notas', '% c/ Notas']
         df_overview_display = pd.DataFrame(columns=cols_order)
         

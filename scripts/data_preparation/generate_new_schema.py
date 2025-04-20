@@ -1,3 +1,9 @@
+"""Script para ler um arquivo JSON de metadados antigo (schema_metadata.json)
+e transformá-lo em uma nova estrutura JSON (generated_schema_structure.json)
+com campos adicionais e uma organização diferente.
+
+Este script parece ser um passo intermediário ou de migração de formato.
+"""
 import json
 from pathlib import Path
 from collections import OrderedDict

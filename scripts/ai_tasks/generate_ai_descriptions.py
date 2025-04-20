@@ -19,11 +19,20 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 # --- FIM NOVO ---
 
+# Adiciona o diretório raiz ao sys.path para permitir importações de src
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(ROOT_DIR)
+
 # Importar funções utilitárias e de geração
 from src.core.utils import load_json_safe
-from src.core.ai_integration import generate_description_with_adapter
 from src.core.logging_config import setup_logging
-from src.core.config import OUTPUT_COMBINED_FILE, OVERVIEW_COUNTS_FILE # Importar caminhos
+from src.core.config import ( # Atualizado para importar de src.core
+    OUTPUT_COMBINED_FILE, OVERVIEW_COUNTS_FILE,
+    MERGED_SCHEMA_FOR_EMBEDDINGS_FILE,
+    AI_DESCRIPTIONS_FILE # Usaremos este como base para o nome de saída
+)
+from src.ollama_integration.ai_integration import generate_description_with_adapter # Atualizado
+from src.utils.json_helpers import load_json, save_json # Assumindo que está em src.utils
 
 # Configurar logging (usando a função centralizada)
 setup_logging()

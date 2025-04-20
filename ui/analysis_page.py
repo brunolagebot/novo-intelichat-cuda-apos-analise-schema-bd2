@@ -13,7 +13,8 @@ def display_analysis_page(technical_schema_data):
     """Renderiza a página de Análise Estrutural."""
 
     st.header("🔎 Análise Estrutural e de Referências do Schema")
-    st.caption(f"Analisando informações de: `{config.TECHNICAL_SCHEMA_FILE}`")
+    loaded_schema_path = st.session_state.get('loaded_schema_file', "Não definido")
+    st.caption(f"Analisando informações de: `{loaded_schema_path}`")
     st.divider()
 
     # Verifica se a análise de chaves está no estado da sessão

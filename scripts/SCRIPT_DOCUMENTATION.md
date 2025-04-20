@@ -71,31 +71,173 @@ As credenciais e parâmetros de conexão com o banco de dados Firebird são obti
 
 ---
 
-## 2. `merge_schema_data.py`
+## 2. `merge_enrich_schema.py`
 
-**(Documentação Pendente)**
+**Propósito:**
 
-*   **Propósito:**
-*   **Uso:**
-*   **Configuração:**
-*   **Input:**
-*   **Output:**
-*   **Lógica Principal:**
-*   **Dependências Principais:**
+*(Use este script para gerar o arquivo JSON final que combina todos os metadados disponíveis: técnico, manual e IA.)*
+
+Este script combina informações de três fontes principais para criar um arquivo de schema enriquecido, otimizado para a geração de embeddings ou outras análises de metadados:
+1.  **Schema Técnico:** A estrutura base extraída do banco de dados (geralmente por `extract_schema.py`).
+2.  **Metadados Manuais:** Descrições de negócio, notas e outros dados adicionados manualmente (geralmente em `data/metadata/metadata_schema_manual.json`).
+3.  **Descrições Geradas por IA:** Descrições de negócio geradas automaticamente por modelos como GPT (geralmente por `generate-ai-description-openia.py`).
+
+Ele também gera um campo `text_for_embedding` que combina as informações mais relevantes de cada coluna (nome da tabela, nome da coluna, tipo, melhor descrição disponível, notas manuais) em um formato textual único.
+
+**Uso:**
+
+Execute o script da raiz do projeto, especificando os arquivos de entrada e saída desejados.
+
+```bash
+# Uso com padrões (considerando arquivos padrão definidos no script)
+python scripts/merge_enrich_schema.py
+
+# Especificando todos os arquivos
+python scripts/merge_enrich_schema.py \\\
+    --technical_schema data/metadata/technical_schema_from_db.json \\\
+    --manual_metadata data/metadata/metadata_schema_manual.json \\\
+    --ai_descriptions data/metadata/ai_generated_descriptions_openai_35turbo.json \\\
+    --output_enriched_json data/processed/schema_enriched_final.json
+
+# Omitindo descrições IA (se não aplicável)
+python scripts/merge_enrich_schema.py \\\
+    --technical_schema data/metadata/technical_schema_from_db.json \\\
+    --manual_metadata data/metadata/metadata_schema_manual.json \\\
+    --output_enriched_json data/processed/schema_enriched_sem_ia.json
+```
+
+**Configuração:**
+
+*   Os caminhos padrão para os arquivos de entrada (`technical_schema`, `manual_metadata`, `ai_descriptions`) e saída (`output_enriched_json`) podem ser ajustados dentro do próprio script ou fornecidos via argumentos de linha de comando.
+*   O script utiliza `src/utils/json_helpers` para carregar e salvar arquivos JSON e `src/core/log_utils` para logging.
+
+**Argumentos Principais:**
+
+*   `--technical_schema`: (Obrigatório, mas tem padrão) Caminho para o JSON do schema técnico.
+*   `--manual_metadata`: (Obrigatório, mas tem padrão) Caminho para o JSON dos metadados manuais.
+*   `--ai_descriptions`: (Opcional, tem padrão) Caminho para o JSON (lista) das descrições geradas por IA.
+*   `--output_enriched_json`: (Obrigatório, mas tem padrão) Caminho para salvar o JSON enriquecido resultante.
+
+**Input:**
+
+*   Arquivo JSON do schema técnico (ex: `data/metadata/technical_schema_from_db.json`).
+*   Arquivo JSON dos metadados manuais (ex: `data/metadata/metadata_schema_manual.json`).
+*   Arquivo JSON (lista) das descrições de IA (ex: `data/metadata/ai_generated_descriptions_openai_35turbo.json`).
+
+**Output:**
+
+*   Arquivo JSON no caminho especificado por `--output_enriched_json` (ex: `data/processed/schema_enriched_for_embedding.json`). Este arquivo contém a estrutura do schema técnico original, mas com as colunas enriquecidas com as seguintes chaves adicionais (se disponíveis nas entradas):
+    *   `business_description`: Descrição manual.
+    *   `value_mapping_notes`: Notas manuais.
+    *   `ai_generated_description`: Descrição gerada por IA.
+    *   `ai_model_used`: Modelo de IA usado.
+    *   `ai_generation_timestamp`: Timestamp da geração por IA.
+    *   `text_for_embedding`: Texto combinado otimizado para embeddings.
+
+**Lógica Principal:**
+
+1.  Parsear argumentos de linha de comando.
+2.  Carregar os três arquivos JSON de entrada (técnico, manual, IA).
+3.  Mapear as descrições de IA por `(nome_objeto, nome_coluna)` para acesso rápido.
+4.  Iterar sobre cada objeto (tabela/view) e suas colunas no schema técnico.
+5.  Para cada coluna, buscar os dados correspondentes nos metadados manuais e nas descrições de IA.
+6.  Construir um dicionário `output_col_data` para a coluna, incluindo todos os dados técnicos e adicionando as chaves `business_description`, `value_mapping_notes`, `ai_generated_description`, `ai_model_used`, `ai_generation_timestamp`.
+7.  Chamar a função `build_enriched_text` para criar o texto combinado para embedding, priorizando descrições (manual > IA > técnica).
+8.  Adicionar o `output_col_data` à lista de colunas do objeto no dicionário de saída `output_data`.
+9.  Salvar o `output_data` completo no arquivo JSON de saída.
+
+**Dependências Principais:**
+
+*   `json`: Manipulação de JSON.
+*   `argparse`: Parsear argumentos.
+*   `logging`: Registrar informações.
+*   `collections.OrderedDict`: Preservar a ordem das chaves no JSON de saída.
+*   `src.utils.json_helpers`, `src.core.log_utils`, `src.core.config` (para caminhos padrão).
 
 ---
 
 ## 3. `generate_embeddings.py`
 
-**(Documentação Pendente)**
+**Propósito:**
 
-*   **Propósito:**
-*   **Uso:**
-*   **Configuração:**
-*   **Input:**
-*   **Output:**
-*   **Lógica Principal:**
-*   **Dependências Principais:**
+Este script utiliza a API da OpenAI (modelo `gpt-3.5-turbo`) para gerar descrições de negócio para colunas de um schema de banco de dados. Ele é projetado para ler um arquivo de **schema já mesclado** (que combina estrutura técnica, metadados manuais e possivelmente descrições de IA de execuções anteriores) e gerar descrições apenas para as colunas que ainda não as possuem.
+
+**Uso:**
+
+Execute o script da raiz do projeto. O script automaticamente lê o schema mesclado e salva as descrições geradas no arquivo de saída configurado.
+
+```bash
+# Execução padrão (usa arquivos definidos em config.py)
+python scripts/generate-ai-description-openia.py
+
+# Forçar regeneração de todas as descrições
+python scripts/generate-ai-description-openia.py --force_regenerate
+
+# Limitar o número de colunas processadas (para teste)
+python scripts/generate-ai-description-openia.py --max_items 50
+```
+
+**Configuração:**
+
+*   **Chave API OpenAI:** Lida de `.streamlit/secrets.toml` (chave `openai.api_key`) ou da variável de ambiente `OPENAI_API_KEY`.
+*   **Arquivos:** Os caminhos para o arquivo de schema mesclado de entrada e o arquivo de descrições geradas de saída são definidos pelas constantes `MERGED_SCHEMA_FOR_EMBEDDINGS_FILE` e `AI_DESCRIPTIONS_FILE` em `src/core/config.py`.
+
+**Argumentos Principais:**
+
+*   `-i`, `--input`: Schema mesclado de entrada (padrão: `config.MERGED_SCHEMA_FOR_EMBEDDINGS_FILE`).
+*   `-o`, `--output`: Arquivo de saída para descrições geradas (padrão: `config.AI_DESCRIPTIONS_FILE`).
+*   `--force_regenerate`: Ignora todas as verificações e tenta gerar descrição para todas as colunas encontradas na entrada.
+*   `--max_items`: Limita o número de colunas a processar.
+
+**Input:**
+
+*   `args.input`: Arquivo JSON do schema mesclado (ex: `data/processed/merged_schema_for_embeddings.json`). Contém a estrutura técnica e pode conter `business_description` ou `ai_generated_description` já preenchidos.
+*   `args.output` (se `--force_regenerate` não for usado): Lido no início para identificar colunas já processadas nesta execução ou em execuções anteriores não forçadas.
+*   `ROW_COUNTS_FILE` (Opcional): Usado para pular tabelas/views com contagem de linhas 0.
+
+**Output:**
+
+*   `args.output`: Arquivo JSON (ex: `data/metadata/ai_generated_descriptions_openai_35turbo.json`) contendo uma **lista** de dicionários, cada um representando uma descrição gerada. Inclui:
+    *   `object_type`, `object_name`, `column_name`.
+    *   `generated_description`: A descrição gerada pela OpenAI.
+    *   `model_used`: ("gpt-3.5-turbo").
+    *   `generation_timestamp`: Data/hora da geração (UTC).
+*   **Logs:** Informações detalhadas sobre o processo, itens pulados (e motivo), erros e resumo final.
+
+**Lógica Principal:**
+
+1.  Parsear argumentos.
+2.  Verificar existência da chave API OpenAI.
+3.  Carregar schema mesclado (`args.input`).
+4.  Carregar contagens de linhas (opcional).
+5.  Carregar descrições AI já existentes do arquivo de saída (`args.output`), se não estiver forçando a regeneração.
+6.  Preparar lista de colunas a processar, iterando sobre o schema mesclado.
+7.  Iterar sobre as colunas a processar:
+    a.  Pular objeto (tabela/view) se a contagem de linhas for 0 (se disponível).
+    b.  Se não forçar regeneração, pular coluna se:
+        i.  Já possui `business_description` (manual) no schema de entrada.
+        ii. Já possui `ai_generated_description` no schema de entrada.
+        iii.Não possui `sample_values` (amostra de dados vazia/nula).
+        iv. Já existe uma entrada para ela no arquivo de saída carregado.
+    c.  Se não pulou, construir o prompt usando `build_prompt`. O prompt inclui:
+        *   Nome da tabela/view e coluna.
+        *   Tipo técnico.
+        *   Informação se é PK ou FK (incluindo tabela/coluna referenciada).
+        *   Descrição técnica original.
+        *   Até 10 amostras de valores (`sample_values`).
+    d.  Chamar a API `client.chat.completions.create` da OpenAI com o prompt e modelo `gpt-3.5-turbo`.
+    e.  Se a geração for bem-sucedida, adicionar o resultado à lista (`results_list`).
+    f.  Registrar erros e aplicar pausas se necessário (ex: RateLimit).
+8.  Salvar a `results_list` completa (ou atualizada) no arquivo de saída (`args.output`).
+9.  Logar resumo da execução.
+
+**Dependências Principais:**
+
+*   `openai` (>= 1.0)
+*   `python-dotenv`
+*   `toml`
+*   `tqdm`
+*   Módulos internos: `src.core.utils`, `src.core.logging_config`, `src.core.config`.
 
 ---
 
@@ -263,6 +405,145 @@ python scripts/generate-ai-description-openia.py --max_items 50
 
 ---
 
+## 7. `analyze_schema_completeness.py`
+
+**Propósito:**
+
+*(Use este script para verificar a qualidade e o preenchimento do arquivo JSON gerado pelo `merge_enrich_schema.py` ou similar.)*
+
+Este script analisa um arquivo JSON de schema enriquecido (tipicamente o resultado de `merge_enrich_schema.py`) para fornecer estatísticas sobre a completude de certas chaves importantes, especificamente:
+
+*   Quantas colunas possuem a chave `sample_values` vazia (`[]`).
+*   Quantas colunas possuem a chave `sample_values` com algum conteúdo.
+*   Destas que possuem `sample_values`, quantas também possuem alguma descrição (`business_description`, `value_mapping_notes` ou `ai_generated_description`) preenchida.
+
+Isso ajuda a entender a qualidade e a cobertura dos dados de metadados disponíveis para as colunas que têm exemplos de dados.
+
+**Uso:**
+
+Execute o script da raiz do projeto. Por padrão, ele analisa o arquivo definido em `DEFAULT_INPUT_JSON`.
+
+```bash
+# Execução padrão (analisa data/processed/schema_enriched_for_embedding.json)
+python scripts/analyze_schema_completeness.py
+
+# Analisando um arquivo específico
+python scripts/analyze_schema_completeness.py --input_json caminho/para/seu/schema.json
+```
+
+**Configuração:**
+
+*   O caminho padrão do arquivo de entrada pode ser alterado na constante `DEFAULT_INPUT_JSON` dentro do script.
+
+**Argumentos Principais:**
+
+*   `--input_json`: (Opcional) Caminho para o arquivo JSON de schema a ser analisado. Substitui o padrão `DEFAULT_INPUT_JSON`.
+
+**Input:**
+
+*   Arquivo JSON de schema enriquecido (ex: `data/processed/schema_enriched_for_embedding.json`). Espera-se uma estrutura com objetos (tabelas/views) como chaves de nível superior, cada um contendo uma lista `columns`.
+
+**Output:**
+
+*   Imprime no console um resumo das contagens:
+    *   Total de colunas analisadas.
+    *   Número de colunas com `sample_values` vazio.
+    *   Número de colunas com `sample_values` não vazio.
+    *   Número de colunas com `sample_values` não vazio E com alguma descrição.
+*   Logs de informação e erros durante o processo.
+
+**Lógica Principal:**
+
+1.  Parsear argumentos de linha de comando.
+2.  Carregar o arquivo JSON de entrada usando `load_json_safe` (com tratamento básico de erros).
+3.  Chamar a função `analyze_completeness`:
+    a.  Inicializar contadores.
+    b.  Iterar sobre todos os objetos e suas colunas no JSON carregado.
+    c.  Para cada coluna, verificar a existência e o conteúdo da chave `sample_values`.
+    d.  Incrementar `empty_sample_values_count` se for `[]`.
+    e.  Incrementar `non_empty_sample_values_count` se for uma lista não vazia.
+    f.  Se for não vazia, verificar se `business_description`, `value_mapping_notes` ou `ai_generated_description` existem e têm valor (não nulo/vazio/False).
+    g.  Se alguma descrição existir, incrementar `non_empty_with_descriptions_count`.
+    h.  Retornar um dicionário com os totais.
+4.  Imprimir os resultados formatados no console.
+
+**Dependências Principais:**
+
+*   `json`: Manipulação de JSON.
+*   `argparse`: Parsear argumentos.
+*   `logging`: Registrar informações.
+
+---
+
+## 8. `generate_embeddings_and_index.py`
+
+**Propósito:**
+
+*(Use este script para gerar os vetores de embedding para cada coluna, com base no texto combinado do schema enriquecido, e criar um índice FAISS para busca rápida.)*
+
+Este script é responsável por duas tarefas cruciais para a funcionalidade de busca semântica:
+1.  **Gerar Embeddings:** Ele lê o arquivo de schema enriquecido (gerado por `merge_enrich_schema.py`), constrói uma representação textual significativa para cada coluna (combinando nome da tabela, nome da coluna, tipo, descrições, notas, exemplos) e usa um modelo de embedding local via Ollama (especificamente `nomic-embed-text`) para gerar um vetor de embedding (representação numérica semântica) para cada coluna.
+2.  **Criar Índice FAISS:** Após gerar todos os embeddings, ele os organiza em um índice FAISS (`IndexFlatL2`), que permite realizar buscas por similaridade de forma extremamente eficiente.
+
+**Uso:**
+
+Execute o script da raiz do projeto. Ele utilizará os caminhos de arquivos definidos em `src/core/config.py`.
+
+```bash
+# Execução padrão
+python scripts/generate_embeddings_and_index.py
+```
+
+**Configuração:**
+
+*   **Ollama:** É necessário ter o Ollama instalado e rodando localmente, com o modelo de embedding `nomic-embed-text` disponível (`ollama pull nomic-embed-text`).
+*   **Arquivos:** Os caminhos principais são definidos em `src/core/config.py`:
+    *   `MERGED_SCHEMA_FOR_EMBEDDINGS_FILE`: Arquivo de entrada com o schema enriquecido (gerado por `merge_enrich_schema.py`).
+    *   `EMBEDDED_SCHEMA_FILE`: Arquivo de saída que armazena o schema original com a adição da chave `embedding` em cada coluna.
+    *   `FAISS_INDEX_FILE`: Arquivo de saída para o índice FAISS.
+    *   `EMBEDDING_DIMENSION`: Dimensão esperada dos vetores de embedding (ex: 768 para `nomic-embed-text`).
+*   **Timestamps:** O script adiciona um timestamp (formato `YYYYMMDD_HHMMSS`) aos nomes dos arquivos de saída (`EMBEDDED_SCHEMA_FILE` e `FAISS_INDEX_FILE`) para versionamento.
+
+**Argumentos Principais:**
+
+*   Este script, na sua versão atual, não possui argumentos de linha de comando explícitos; ele depende das configurações em `src/core/config.py`.
+
+**Input:**
+
+*   Arquivo JSON do schema enriquecido (`MERGED_SCHEMA_FOR_EMBEDDINGS_FILE`). Este arquivo **deve** conter o campo `text_for_embedding` (ou o script deve ser capaz de construí-lo a partir das outras chaves).
+
+**Output:**
+
+*   Arquivo JSON com o schema e os embeddings (`EMBEDDED_SCHEMA_FILE` com timestamp), contendo a estrutura original mais a chave `embedding` com o vetor numérico para cada coluna.
+*   Arquivo de índice FAISS (`FAISS_INDEX_FILE` com timestamp) contendo os vetores organizados para busca rápida.
+*   Logs detalhados do processo, incluindo progresso e erros.
+
+**Lógica Principal:**
+
+1.  Carregar o schema enriquecido (`MERGED_SCHEMA_FOR_EMBEDDINGS_FILE`).
+2.  Inicializar o cliente Ollama.
+3.  Iterar sobre cada coluna de cada tabela/view no schema:
+    a.  Construir o texto representativo da coluna usando `build_column_text` (prioriza `business_description`, `ai_generated_description`, `description` técnica, e inclui outros metadados e exemplos).
+    b.  Chamar `client.embeddings` com o modelo `nomic-embed-text` e o texto construído.
+    c.  Se bem-sucedido, adicionar o vetor de embedding (`embedding_vector`) à estrutura do schema em memória e a uma lista (`embeddings_list`) para o FAISS.
+    d.  Registrar progresso e erros.
+4.  Gerar um timestamp.
+5.  Salvar o schema completo (com os embeddings adicionados) em um novo arquivo JSON (`EMBEDDED_SCHEMA_FILE` com timestamp).
+6.  Converter a `embeddings_list` para um array NumPy.
+7.  Criar um índice FAISS `IndexFlatL2` com a dimensão correta.
+8.  Adicionar os embeddings NumPy ao índice FAISS.
+9.  Salvar o índice FAISS em um arquivo (`FAISS_INDEX_FILE` com timestamp).
+
+**Dependências Principais:**
+
+*   `ollama`: Biblioteca cliente para interagir com o serviço Ollama.
+*   `faiss-cpu`: Biblioteca para criação e busca de índices de similaridade (versão CPU).
+*   `numpy`: Manipulação de arrays numéricos.
+*   `json`, `os`, `sys`, `logging`, `time`, `datetime`, `pathlib`.
+*   Módulos internos: `src.core.log_utils`, `src.core.config`.
+
+---
+
 ## `extract_technical_schema.py`
 
 **Propósito:**
@@ -332,7 +613,7 @@ python -m scripts.extract_technical_schema
 *   `extract_full_schema_from_db(conn)`: Orquestra toda a extração, processamento de metadados, análise de chaves e busca de amostras.
 *   `main()`: Gerencia a conexão com o banco, chama a função de extração principal, e salva o resultado no arquivo JSON.
 
----
+--- 
 
 ## `extract_new_schema_firebird.py`
 
@@ -383,3 +664,73 @@ As credenciais e parâmetros de conexão com o banco de dados Firebird são obti
 4.  Define mapeamento de tipos Firebird.
 5.  Define função `load_original_descriptions` para carregar metadados do `schema_metadata.json` (se existir) em um dicionário para lookup rápido (chaves são tuplas `(NOME_TABELA_UPPER, NOME_COLUNA_UPPER)`).
 6.  Define função `
+
+## 7. `analyze_schema_completeness.py`
+
+**Propósito:**
+
+*(Use este script para verificar a qualidade e o preenchimento do arquivo JSON gerado pelo `merge_enrich_schema.py` ou similar.)*
+
+Este script analisa um arquivo JSON de schema enriquecido (tipicamente o resultado de `merge_enrich_schema.py`) para fornecer estatísticas sobre a completude de certas chaves importantes, especificamente:
+
+*   Quantas colunas possuem a chave `sample_values` vazia (`[]`).
+*   Quantas colunas possuem a chave `sample_values` com algum conteúdo.
+*   Destas que possuem `sample_values`, quantas também possuem alguma descrição (`business_description`, `value_mapping_notes` ou `ai_generated_description`) preenchida.
+
+Isso ajuda a entender a qualidade e a cobertura dos dados de metadados disponíveis para as colunas que têm exemplos de dados.
+
+**Uso:**
+
+Execute o script da raiz do projeto. Por padrão, ele analisa o arquivo definido em `DEFAULT_INPUT_JSON`.
+
+```bash
+# Execução padrão (analisa data/processed/schema_enriched_for_embedding.json)
+python scripts/analyze_schema_completeness.py
+
+# Analisando um arquivo específico
+python scripts/analyze_schema_completeness.py --input_json caminho/para/seu/schema.json
+```
+
+**Configuração:**
+
+*   O caminho padrão do arquivo de entrada pode ser alterado na constante `DEFAULT_INPUT_JSON` dentro do script.
+
+**Argumentos Principais:**
+
+*   `--input_json`: (Opcional) Caminho para o arquivo JSON de schema a ser analisado. Substitui o padrão `DEFAULT_INPUT_JSON`.
+
+**Input:**
+
+*   Arquivo JSON de schema enriquecido (ex: `data/processed/schema_enriched_for_embedding.json`). Espera-se uma estrutura com objetos (tabelas/views) como chaves de nível superior, cada um contendo uma lista `columns`.
+
+**Output:**
+
+*   Imprime no console um resumo das contagens:
+    *   Total de colunas analisadas.
+    *   Número de colunas com `sample_values` vazio.
+    *   Número de colunas com `sample_values` não vazio.
+    *   Número de colunas com `sample_values` não vazio E com alguma descrição.
+*   Logs de informação e erros durante o processo.
+
+**Lógica Principal:**
+
+1.  Parsear argumentos de linha de comando.
+2.  Carregar o arquivo JSON de entrada usando `load_json_safe` (com tratamento básico de erros).
+3.  Chamar a função `analyze_completeness`:
+    a.  Inicializar contadores.
+    b.  Iterar sobre todos os objetos e suas colunas no JSON carregado.
+    c.  Para cada coluna, verificar a existência e o conteúdo da chave `sample_values`.
+    d.  Incrementar `empty_sample_values_count` se for `[]`.
+    e.  Incrementar `non_empty_sample_values_count` se for uma lista não vazia.
+    f.  Se for não vazia, verificar se `business_description`, `value_mapping_notes` ou `ai_generated_description` existem e têm valor (não nulo/vazio/False).
+    g.  Se alguma descrição existir, incrementar `non_empty_with_descriptions_count`.
+    h.  Retornar um dicionário com os totais.
+4.  Imprimir os resultados formatados no console.
+
+**Dependências Principais:**
+
+*   `json`: Manipulação de JSON.
+*   `argparse`: Parsear argumentos.
+*   `logging`: Registrar informações.
+
+---

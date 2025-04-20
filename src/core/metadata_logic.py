@@ -309,6 +309,8 @@ def compare_metadata_changes(initial_meta, current_meta):
         logger.warning("Metadados iniciais ou atuais ausentes para comparação.")
         return 0, 0
 
+    logger.debug("--- Iniciando Comparação de Metadados --- ") # Log inicial da função
+
     for obj_type_key in list(current_meta.keys()):
         if obj_type_key not in ['TABLES', 'VIEWS']:
             continue
@@ -326,14 +328,33 @@ def compare_metadata_changes(initial_meta, current_meta):
                 # Compara Descrição
                 current_desc = current_col_data.get('description', '').strip()
                 initial_desc = initial_col_data.get('description', '').strip()
-                if current_desc and not initial_desc:
+                
+                # --- DEBUG LOG --- #
+                logger.debug(f"Comparando {obj_name}.{col_name} [Descrição]:")
+                logger.debug(f"  Inicial: '{initial_desc}'")
+                logger.debug(f"  Atual:   '{current_desc}'")
+                is_new_desc = current_desc and not initial_desc
+                logger.debug(f"  É nova descrição? {is_new_desc}")
+                # --- FIM DEBUG LOG ---
+                
+                if is_new_desc:
                     new_descriptions += 1
 
                 # Compara Notas de Mapeamento
                 current_notes = current_col_data.get('value_mapping_notes', '').strip()
                 initial_notes = initial_col_data.get('value_mapping_notes', '').strip()
-                if current_notes and not initial_notes:
+                
+                # --- DEBUG LOG --- #
+                logger.debug(f"Comparando {obj_name}.{col_name} [Notas]:")
+                logger.debug(f"  Iniciais: '{initial_notes}'")
+                logger.debug(f"  Atuais:   '{current_notes}'")
+                is_new_note = current_notes and not initial_notes
+                logger.debug(f"  É nova nota? {is_new_note}")
+                # --- FIM DEBUG LOG ---
+                
+                if is_new_note:
                     new_notes += 1
 
     logger.info(f"Comparação de metadados: {new_descriptions} novas descrições, {new_notes} novas notas.")
+    logger.debug("--- Fim Comparação de Metadados --- ") # Log final da função
     return new_descriptions, new_notes 

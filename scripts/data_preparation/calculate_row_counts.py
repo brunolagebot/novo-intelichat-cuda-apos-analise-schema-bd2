@@ -1,3 +1,11 @@
+"""Script para calcular a contagem de linhas para cada tabela e view
+em um banco de dados Firebird. Obtém a lista de objetos diretamente
+do banco de dados e salva as contagens e um timestamp em um arquivo JSON.
+
+Utiliza argumentos de linha de comando para configuração e pode opcionalmente
+salvar o schema extraído.
+"""
+
 import json
 import os
 import sys

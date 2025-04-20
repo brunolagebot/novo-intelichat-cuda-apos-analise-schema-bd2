@@ -8,6 +8,8 @@ from tqdm import tqdm
 import time
 import toml
 import sys
+# NOVO: Importar Path
+from pathlib import Path
 # NOVO: Importar cliente e exceções da V1
 from openai import OpenAI, RateLimitError, APIError, APITimeoutError, APIConnectionError
 from dotenv import load_dotenv
@@ -22,11 +24,9 @@ if project_root not in sys.path:
 from src.core.utils import load_json_safe
 # from src.core.ai_integration import generate_description_with_openai
 from src.core.logging_config import setup_logging
-from src.core.config import (
-    MERGED_SCHEMA_FOR_EMBEDDINGS_FILE, 
-    AI_DESCRIPTIONS_FILE, 
-    ROW_COUNTS_FILE # Mantido se a lógica de pular linhas 0 for útil
-)
+# ATUALIZADO: Importar constantes relevantes de config.py (individualmente)
+from src.core.config import MERGED_SCHEMA_FOR_EMBEDDINGS_FILE
+from src.core.config import AI_DESCRIPTIONS_FILE
 
 # --- Carregar chave da OpenAI do .streamlit/secrets.toml ---
 try:
@@ -205,12 +205,13 @@ def main():
     logger.info(f"Schema mesclado carregado em: {schema_load_end - schema_load_start:.2f}s")
 
     # Carregar contagens de linhas (opcional, mas mantido por enquanto)
+    row_counts_file_path = 'data/metadata/overview_counts.json' # Usar caminho direto temporariamente
     counts_load_start = time.perf_counter()
-    logger.info(f"Carregando contagens de linhas de {ROW_COUNTS_FILE}...")
-    row_counts = load_json_safe(ROW_COUNTS_FILE)
+    logger.info(f"Carregando contagens de linhas de {row_counts_file_path}...") # Usar variável local
+    row_counts = load_json_safe(row_counts_file_path) # Usar variável local
     counts_load_end = time.perf_counter()
     if not row_counts:
-        logger.warning(f"Arquivo {ROW_COUNTS_FILE} não encontrado ou inválido. Não será possível pular objetos vazios.")
+        logger.warning(f"Arquivo {row_counts_file_path} não encontrado ou inválido. Não será possível pular objetos vazios.") # Usar variável local
         row_counts = {} 
     logger.info(f"Contagens de linhas carregadas em: {counts_load_end - counts_load_start:.2f}s")
 

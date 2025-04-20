@@ -10,7 +10,7 @@ import pandas as pd
 
 # Importações de módulos core e utils
 import src.core.config as config
-from src.core.analysis import generate_documentation_overview
+from src.analysis.analysis import generate_documentation_overview
 from src.core.data_loader import load_overview_counts
 
 logger = logging.getLogger(__name__)
@@ -18,54 +18,46 @@ logger = logging.getLogger(__name__)
 def display_overview_page(technical_schema_data, metadata_dict, db_path, db_user, db_password, db_charset):
     """Renderiza a página de Visão Geral."""
 
-    st.header("Visão Geral da Documentação e Contagens (Cache)")
-    st.caption(f"Metadados de: `{config.METADATA_FILE}` | Schema de: `{config.TECHNICAL_SCHEMA_FILE}` | Contagens de: `{config.OVERVIEW_COUNTS_FILE}`")
+    # --- Cabeçalho e Informações do Schema Carregado --- #
+    st.header("Visão Geral do Schema Ativo")
+    
+    # Pega o path do arquivo carregado do session_state
+    loaded_schema_path = st.session_state.get('loaded_schema_file', "Não definido")
+    st.caption(f"**Schema Ativo:** `{loaded_schema_path}`")
+    st.caption(f"**Metadados Manuais:** `{config.METADATA_FILE}`") # Mantém info dos metadados manuais
+    
     st.divider()
-    
-    # --- NOVO: Exibir Informações de Validação e Contagem --- #
-    metadata_info = technical_schema_data.get('_metadata_info')
-    if metadata_info:
-        total_cols = metadata_info.get('total_column_count', 'N/A')
-        manual_cols = metadata_info.get('manual_metadata_column_count', 'N/A')
-        missing_manual_cols = metadata_info.get('missing_manual_metadata_column_count', 'N/A')
-        status = metadata_info.get('validation_status', 'Desconhecido')
-        timestamp_str = metadata_info.get('validation_timestamp')
-        missing_objs = metadata_info.get('missing_objects', [])
-        missing_cols = metadata_info.get('missing_columns', {})
-        
-        try:
-            if timestamp_str:
-                ts = datetime.datetime.fromisoformat(timestamp_str).strftime('%d/%m/%Y %H:%M:%S')
-            else:
-                ts = "N/A"
-        except ValueError:
-            ts = "Data inválida"
-            
-        st.subheader("Status do Schema Combinado")
-        col1, col2, col3, col4, col5 = st.columns(5)
-        col1.metric("Total Colunas", str(total_cols))
-        col2.metric("Com Metadados Manuais", str(manual_cols))
-        col3.metric("Sem Metadados Manuais", str(missing_manual_cols))
-        col4.metric("Status Validação", status, delta_color="inverse" if status != 'OK' else "normal")
-        col5.metric("Última Validação", ts)
-        
-        if status != 'OK':
-            st.warning(f"Atenção: A validação do schema combinado (executada em {ts}) falhou. O schema pode estar incompleto.", icon="⚠️")
-            with st.expander("Detalhes dos Itens Faltando"):
-                if missing_objs:
-                    st.markdown("**Objetos (Tabelas/Views) faltando:**")
-                    st.json(missing_objs)
-                if missing_cols:
-                    st.markdown("**Colunas faltando (por Tabela/View):**")
-                    st.json(missing_cols)
-        else:
-            st.success(f"O schema combinado foi validado com sucesso em {ts}.", icon="✅")
-        st.caption("A validação compara o schema combinado atual com o último schema técnico extraído no momento da execução do script `scripts/merge_schema_data.py`.")
+
+    # --- Calcular Contagens Dinamicamente --- #
+    total_objects = 0
+    total_columns = 0
+    columns_with_business_desc = 0
+
+    if technical_schema_data and isinstance(technical_schema_data, dict):
+        total_objects = len(technical_schema_data)
+        for obj_name, obj_data in technical_schema_data.items():
+            if isinstance(obj_data, dict) and 'columns' in obj_data and isinstance(obj_data['columns'], list):
+                obj_columns = len(obj_data['columns'])
+                total_columns += obj_columns
+                for col_data in obj_data['columns']:
+                    if isinstance(col_data, dict) and col_data.get('business_description'):
+                        columns_with_business_desc += 1
+            # Adicionar um else para logar/avisar sobre objetos malformados se necessário
+            # else:
+            #     logger.warning(f"Objeto '{obj_name}' no schema não tem formato esperado (dict com lista 'columns').")
     else:
-        st.warning("Informações de validação e contagem não encontradas no schema. Execute o script `scripts/merge_schema_data.py` para gerá-las.", icon="❓")
-    # --- FIM: Informações de Validação --- #
-    
-    # --- Botão para Executar Contagem --- #
+        st.warning("Schema técnico não carregado ou em formato inválido.")
+
+    # --- Exibir Novas Contagens --- #
+    st.subheader("Estatísticas do Schema Ativo")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Objetos (Tabelas/Views)", str(total_objects))
+    col2.metric("Total de Colunas", str(total_columns))
+    col3.metric("Colunas com Desc. Negócio", str(columns_with_business_desc))
+    st.caption("Contagens calculadas diretamente do schema carregado em memória.")
+
+    # --- Bloco de Contagem de Linhas (Existente) --- #
+    # O código para o botão "Executar Cálculo de Contagem Agora" permanece aqui
     st.divider()
     st.subheader("Atualizar Contagem de Linhas")
     st.warning("Executar a contagem pode levar vários minutos dependendo do tamanho do banco.", icon="⏱️")
@@ -87,15 +79,15 @@ def display_overview_page(technical_schema_data, metadata_dict, db_path, db_user
 
             try:
                 python_executable = sys.executable
+                # Tentativa 3: Chamar APENAS com --help para testar argparse
+                module_path = "scripts.calculate_row_counts"
                 cmd_list = [
                     python_executable,
-                    script_path,
-                    "--db-path", db_path,
-                    "--db-user", db_user,
-                    "--db-password", db_password,
-                    "--db-charset", db_charset
+                    "-m",
+                    module_path,
+                    "--help" # Apenas pedir ajuda
                 ]
-                logger.info(f"Executando comando: {' '.join(cmd_list[:5])} --db-password **** ...")
+                logger.info(f"Executando comando (--help test): {' '.join(cmd_list)}")
 
                 process = subprocess.Popen(
                     cmd_list,

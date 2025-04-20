@@ -24,16 +24,61 @@ from src.core.metadata_logic import (
     compare_metadata_changes
 )
 from src.core.data_loader import load_metadata
-from src.core.ai_integration import (
+from src.ollama_integration.ai_integration import (
     generate_ai_description,
     find_similar_columns,
     get_query_embedding,
     # OLLAMA_AVAILABLE e chat_completion são passados como argumentos
 )
-from src.core.db_utils import fetch_sample_data
+from src.database.db_utils import fetch_sample_data
 # Funções como populate_descriptions_from_keys, apply_heuristics_globally são chamadas pela sidebar
 
 logger = logging.getLogger(__name__)
+
+# --- NOVA FUNÇÃO CALLBACK --- #
+def update_metadata_value(key, obj_type, obj_name, col_name=None, field_name=None):
+    """Callback para atualizar st.session_state.metadata diretamente."""
+    new_value = st.session_state.get(key)
+    if new_value is None:
+        logger.warning(f"Callback de atualização chamado para key '{key}' mas valor não encontrado no estado.")
+        return
+
+    try:
+        if col_name and field_name:
+            # Atualizando campo de coluna
+            if obj_type not in st.session_state.metadata:
+                st.session_state.metadata[obj_type] = OrderedDict()
+            if obj_name not in st.session_state.metadata[obj_type]:
+                st.session_state.metadata[obj_type][obj_name] = OrderedDict({'description': '', 'COLUMNS': OrderedDict()})
+            if 'COLUMNS' not in st.session_state.metadata[obj_type][obj_name]:
+                 st.session_state.metadata[obj_type][obj_name]['COLUMNS'] = OrderedDict()
+            if col_name not in st.session_state.metadata[obj_type][obj_name]['COLUMNS']:
+                 st.session_state.metadata[obj_type][obj_name]['COLUMNS'][col_name] = OrderedDict()
+            
+            # Verifica se realmente mudou antes de atualizar e setar flag
+            current_value = st.session_state.metadata[obj_type][obj_name]['COLUMNS'][col_name].get(field_name, '')
+            if new_value.strip() != current_value.strip():
+                st.session_state.metadata[obj_type][obj_name]['COLUMNS'][col_name][field_name] = new_value
+                st.session_state.unsaved_changes = True
+                logger.debug(f"Callback: Atualizado {obj_name}.{col_name}.{field_name} para '{new_value[:50]}...'")
+        elif field_name == 'description':
+            # Atualizando descrição do objeto
+            if obj_type not in st.session_state.metadata:
+                st.session_state.metadata[obj_type] = OrderedDict()
+            if obj_name not in st.session_state.metadata[obj_type]:
+                st.session_state.metadata[obj_type][obj_name] = OrderedDict({'description': '', 'COLUMNS': OrderedDict()})
+
+            current_value = st.session_state.metadata[obj_type][obj_name].get('description', '')
+            if new_value.strip() != current_value.strip():
+                st.session_state.metadata[obj_type][obj_name]['description'] = new_value
+                st.session_state.unsaved_changes = True
+                logger.debug(f"Callback: Atualizado {obj_name}.description para '{new_value[:50]}...'")
+        else:
+            logger.error(f"Callback de atualização chamado com argumentos inválidos: obj={obj_name}, col={col_name}, field={field_name}")
+            
+    except Exception as e:
+        logger.error(f"Erro dentro do callback update_metadata_value: {e}", exc_info=True)
+# --- FIM NOVA FUNÇÃO CALLBACK --- #
 
 # --- NOVA FUNÇÃO AUXILIAR ---
 def formatar_amostra_para_prompt(sample_data, technical_columns, tech_constraints, target_column=None, max_rows=3, max_cols=7, max_chars_per_cell=50):
@@ -165,6 +210,21 @@ def formatar_amostra_para_prompt(sample_data, technical_columns, tech_constraint
 def display_edit_page(technical_schema_data, metadata_dict, OLLAMA_AVAILABLE, chat_completion, db_path, db_user, db_password, db_charset):
     """Renderiza a página de Edição de Metadados."""
 
+    # --- LOG DE DEBUG ADICIONADO --- #
+    if metadata_dict:
+        logger.debug(f"[display_edit_page] Recebido metadata_dict com chaves: {list(metadata_dict.keys())}")
+        # Opcional: Logar um trecho específico para mais detalhes
+        # first_table_key = next(iter(metadata_dict.get('TABLES', {})), None)
+        # if first_table_key:
+        #     logger.debug(f"[display_edit_page] Descrição da primeira tabela ({first_table_key}): {metadata_dict['TABLES'][first_table_key].get('description', 'N/A')}")
+    else:
+        logger.warning("[display_edit_page] Recebido metadata_dict vazio ou None.")
+    # --- FIM LOG DE DEBUG --- #
+
+    # Inicializa estado da sessão específico da página, se necessário
+    if 'current_table_for_ai' not in st.session_state:
+        st.session_state.current_table_for_ai = None
+
     st.header("Editor de Metadados")
     st.caption(f"Editando o arquivo: `{config.METADATA_FILE}` | Contexto técnico de: `{config.TECHNICAL_SCHEMA_FILE}`")
 
@@ -272,17 +332,22 @@ def display_edit_page(technical_schema_data, metadata_dict, OLLAMA_AVAILABLE, ch
                 desc_obj_area, btn_ai_obj_area = st.columns([4, 1]) # Mantém colunas para descrição e botão IA
 
                 with desc_obj_area:
-                    new_obj_desc = st.text_area(
+                    # --- MODIFICADO: Usar callback --- #
+                    st.text_area(
                         "Descrição Geral",
                         value=obj_data.get("description", ""),
-                        key=obj_desc_key,
+                        key=obj_desc_key, # A chave do widget ainda é necessária
                         height=100,
                         label_visibility="collapsed",
-                        on_change=lambda: st.session_state.update({'unsaved_changes': True})
+                        on_change=update_metadata_value, # Nome da função callback
+                        kwargs=dict( # Passa argumentos para o callback
+                            key=obj_desc_key, 
+                            obj_type=metadata_key_type, 
+                            obj_name=selected_object, 
+                            field_name='description'
+                        )
                     )
-                    if new_obj_desc != obj_data.get("description", ""):
-                        st.session_state.metadata[metadata_key_type][selected_object]['description'] = new_obj_desc
-                        st.session_state.unsaved_changes = True
+                    # --- FIM MODIFICADO --- #
 
                 with btn_ai_obj_area:
                     if st.button("Sugerir IA", key=f"btn_ai_obj_{selected_object}", use_container_width=True, disabled=not OLLAMA_AVAILABLE or not st.session_state.get('ollama_enabled', True)):
@@ -423,18 +488,23 @@ def display_edit_page(technical_schema_data, metadata_dict, OLLAMA_AVAILABLE, ch
                         desc_col_area, btns_col_area = st.columns([4, 1])
                         col_desc_key = f"desc_{selected_object}_{col_name}"
                         with desc_col_area:
-                            new_col_desc = st.text_area(
+                            # --- MODIFICADO: Usar callback --- #
+                            st.text_area(
                                 f"Descrição Coluna `{col_name}`",
-                                value=description_value_to_display,
-                                key=col_desc_key,
+                                value=description_value_to_display, # O valor inicial ainda é útil
+                                key=col_desc_key, # Chave do widget
                                 height=75,
                                 label_visibility="collapsed",
-                                on_change=lambda: st.session_state.update({'unsaved_changes': True})
+                                on_change=update_metadata_value, # Callback
+                                kwargs=dict( # Argumentos para callback
+                                    key=col_desc_key,
+                                    obj_type=metadata_key_type,
+                                    obj_name=selected_object,
+                                    col_name=col_name,
+                                    field_name='description'
+                                )
                             )
-                            # Atualiza estado se mudou
-                            if new_col_desc != col_meta_data.get('description', ''):
-                                st.session_state.metadata[metadata_key_type][selected_object]['COLUMNS'][col_name]['description'] = new_col_desc
-                                st.session_state.unsaved_changes = True
+                            # --- FIM MODIFICADO --- #
                         
                         with btns_col_area:
                             if st.button("IA", key=f"btn_ai_col_{col_name}", help="Sugerir descrição com IA", use_container_width=True, disabled=not OLLAMA_AVAILABLE or not st.session_state.get('ollama_enabled', True)):
@@ -508,18 +578,24 @@ def display_edit_page(technical_schema_data, metadata_dict, OLLAMA_AVAILABLE, ch
                         if heuristic_notes_source: st.caption(f"ℹ️ Sugestão ({heuristic_notes_source}). Edite abaixo.")
                         
                         col_notes_key = f"notes_{selected_object}_{col_name}"
-                        new_col_notes = st.text_area(
+                        # --- MODIFICADO: Usar callback --- #
+                        st.text_area(
                             f"Notas Mapeamento (`{col_name}`)",
                             value=notes_value_to_display,
                             key=col_notes_key,
                             height=75,
                             label_visibility="collapsed",
                             help="Explique valores (1=Ativo) ou formatos.",
-                            on_change=lambda: st.session_state.update({'unsaved_changes': True})
+                            on_change=update_metadata_value, # Callback
+                            kwargs=dict( # Argumentos para callback
+                                key=col_notes_key,
+                                obj_type=metadata_key_type,
+                                obj_name=selected_object,
+                                col_name=col_name,
+                                field_name='value_mapping_notes'
+                            )
                         )
-                        if new_col_notes != col_meta_data.get('value_mapping_notes', ''):
-                            st.session_state.metadata[metadata_key_type][selected_object]['COLUMNS'][col_name]['value_mapping_notes'] = new_col_notes
-                            st.session_state.unsaved_changes = True
+                        # --- FIM MODIFICADO --- #
 
                         # --- EXIBIR DESCRIÇÃO IA (ADICIONADO AQUI) ---
                         # Acessa os dados técnicos/enriquecidos da coluna
@@ -655,27 +731,14 @@ def display_edit_page(technical_schema_data, metadata_dict, OLLAMA_AVAILABLE, ch
                 elif isinstance(sample_data_result, str):
                     # Erro já exibido pelo botão carregar, não precisa repetir
                     pass 
-            
-            # --- Botão Salvar (no final da página de edição) --- #
-            st.divider()
-            save_button_key = f"save_edit_{selected_object}" 
-            if st.button("💾 Salvar Alterações neste Objeto", type="primary", key=save_button_key):
-                # A lógica de salvamento principal agora está na sidebar (ui/sidebar.py)
-                # Este botão pode ser removido ou ter sua funcionalidade ajustada.
-                # Por ora, vamos assumir que ele chama a função save_metadata e
-                # depois executa a lógica de limpeza de cache original.
-                if save_metadata(st.session_state.metadata, config.METADATA_FILE):
-                    st.success(f"Alterações em `{selected_object}` salvas!", icon="✅")
-                    st.session_state.unsaved_changes = False # Reseta flag
-                    # Limpa cache e atualiza estado inicial
-                    try:
-                        load_metadata.clear()
-                        st.session_state.initial_metadata = copy.deepcopy(st.session_state.metadata)
-                        st.session_state.last_save_time = time.time()
-                    except Exception as e:
-                        logger.warning(f"Erro ao limpar cache/atualizar estado pós-save: {e}")
-                else:
-                    st.error(f"Falha ao salvar alterações em `{selected_object}`.")
+            # --- FIM: Seção de Pré-visualização e Exportação ---
 
-    else: # Nenhum objeto selecionado
-        st.info("Selecione um objeto na lista acima para editar seus metadados.") 
+        # --- FIM Bloco de Edição Colunas --- #
+
+        # Removido o botão "Salvar Alterações neste Objeto"
+
+    # --- Bloco ELSE correspondente ao 'if selected_object:' --- #
+    else:
+        st.info("Selecione um objeto na lista acima para editar seus metadados.")
+
+    # --- FIM: Edição dos Metadados --- # 
