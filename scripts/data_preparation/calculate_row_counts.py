@@ -200,10 +200,11 @@ def main(args):
             logger.debug(f"Consultando contagem para {obj_type} '{obj_name}'")
             
             count = fetch_row_count(conn, obj_name)
-            if count is not None:
-                row_counts[f"{obj_type}:{obj_name}"] = count
+            if count is None:
+                logger.warning(f"Não foi possível obter a contagem para {obj_type} '{obj_name}'. Marcando como ERROR.")
+                row_counts[f"{obj_type}:{obj_name}"] = "ERROR"
             else:
-                logger.warning(f"Não foi possível obter a contagem para {obj_type} '{obj_name}'")
+                row_counts[f"{obj_type}:{obj_name}"] = count
 
             if processed_count % progress_interval == 0 or processed_count == total_objects:
                 logger.info(f"Progresso: {processed_count}/{total_objects} objetos consultados ({processed_count/total_objects*100:.1f}%)...")

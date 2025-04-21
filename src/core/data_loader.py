@@ -54,6 +54,10 @@ def load_metadata(file_path):
             # Usar OrderedDict para tentar manter a ordem original das chaves
             data = json.load(f, object_pairs_hook=OrderedDict)
             logger.info(f"Metadados carregados de {file_path}")
+            # --- NOVO: Normalizar valores None para "" --- #
+            _normalize_none_to_empty_string(data)
+            logger.debug("Metadados normalizados (None -> \"\").")
+            # --- FIM NOVO --- #
             return data
     except json.JSONDecodeError as e:
         st.error(f"Erro ao decodificar JSON do arquivo {file_path}: {e}")
@@ -67,6 +71,29 @@ def load_metadata(file_path):
         st.error(f"Erro inesperado ao carregar {file_path}: {e}")
         logger.exception(f"Erro inesperado ao carregar {file_path}")
         return {}
+
+# --- NOVA FUNÇÃO AUXILIAR DE NORMALIZAÇÃO ---
+FIELDS_TO_NORMALIZE = {
+    'description', 
+    'object_business_description', 
+    'object_value_mapping_notes', 
+    'business_description', 
+    'value_mapping_notes'
+}
+
+def _normalize_none_to_empty_string(obj):
+    """Percorre recursivamente dicts e lists, substituindo None por "" em chaves específicas."""
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if key in FIELDS_TO_NORMALIZE and value is None:
+                obj[key] = ""
+            elif isinstance(value, (dict, list)):
+                _normalize_none_to_empty_string(value)
+    elif isinstance(obj, list):
+        for i, item in enumerate(obj):
+            if isinstance(item, (dict, list)):
+                _normalize_none_to_empty_string(item)
+# --- FIM DA NOVA FUNÇÃO ---
 
 @st.cache_data # Cache para contagens (não devem mudar frequentemente sem ação externa)
 def load_overview_counts(file_path):
@@ -151,6 +178,24 @@ def load_key_analysis_results(file_path):
         logger.error(f"Erro inesperado ao carregar resultados da análise de chaves de '{file_path}': {e}", exc_info=True)
         return default_result
 
+# --- NOVO: Função para carregar descrições AI de objetos --- #
+@st.cache_data
+def load_ai_object_descriptions(file_path):
+    """Carrega o arquivo JSON com descrições AI para objetos."""
+    logger.info(f"---> EXECUTANDO load_ai_object_descriptions para: {file_path}")
+    if not os.path.exists(file_path):
+        logger.warning(f"Arquivo de descrições AI de objetos {file_path} não encontrado. Retornando dict vazio.")
+        return {}
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f, object_pairs_hook=OrderedDict)
+            logger.info(f"Descrições AI de objetos carregadas de {file_path}")
+            return data
+    except Exception as e:
+        st.error(f"Erro ao carregar/decodificar JSON de descrições AI de objetos {file_path}: {e}")
+        logger.error(f"Erro ao carregar descrições AI de objetos {file_path}", exc_info=True)
+        return {}
+
 # --- Função Principal de Carregamento e Processamento --- #
 
 def load_and_process_data():
@@ -159,7 +204,7 @@ def load_and_process_data():
     # logger.info("Cache de load_metadata limpo no início de load_and_process_data.")
     # ---------------------------------------------------------------------------- #
     # --- Configuração da Barra de Progresso e Tempos --- #
-    total_steps = 6
+    total_steps = 7 # Incrementa o total de passos
     progress_bar = st.progress(0.0, text="Iniciando carregamento...")
     start_time_total = time.time()
     step_times = {}
@@ -214,6 +259,24 @@ def load_and_process_data():
     progress_bar.progress(float(current_step)/total_steps, text=f"({current_step+1}/{total_steps}) Executando: {step_name}...")
     metadata_dict = load_metadata(config.METADATA_FILE)
     
+    # Se o JSON de metadados não estiver aninhado sob 'TABLES' ou 'VIEWS', encapsula em 'TABLES'
+    if not isinstance(metadata_dict, dict):
+        metadata_dict = {}
+    if 'TABLES' not in metadata_dict and 'VIEWS' not in metadata_dict:
+        metadata_dict = {'TABLES': metadata_dict}
+    
+    # Normalizar chave 'columns' de cada objeto para 'COLUMNS' (upper case) para compatibilidade com UI
+    for obj_type in ['TABLES', 'VIEWS']:
+        if obj_type in metadata_dict and isinstance(metadata_dict[obj_type], dict):
+            for obj_name, obj_meta in metadata_dict[obj_type].items():
+                if isinstance(obj_meta, dict) and 'columns' in obj_meta:
+                    # Evita sobrescrever COLUMNS se já existir
+                    if 'COLUMNS' not in obj_meta:
+                        obj_meta['COLUMNS'] = obj_meta.pop('columns')
+                    else:
+                        # Se já existir COLUMNS, apenas remova o antigo
+                        obj_meta.pop('columns', None)
+    
     # --- ADICIONADO: Verificação Estrita --- #
     if not metadata_dict or not isinstance(metadata_dict, dict):
         logger.error("Falha crítica ao carregar metadados ou metadados vazios. Interrompendo.")
@@ -231,6 +294,13 @@ def load_and_process_data():
     overview_counts = load_overview_counts(config.OVERVIEW_COUNTS_FILE)
     update_progress(step_name, start_time_step)
 
+    # --- Etapa X (NOVA): Carregar Descrições AI de Objetos --- #
+    step_name = "Carregando Descrições AI (Objetos)"
+    start_time_step = time.time()
+    progress_bar.progress(float(current_step)/total_steps, text=f"({current_step+1}/{total_steps}) Executando: {step_name}...")
+    ai_object_descriptions = load_ai_object_descriptions(config.AI_OBJECT_DESCRIPTIONS_FILE)
+    update_progress(step_name, start_time_step)
+
     # --- Etapa 4: CARREGAR Índice FAISS (se aplicável) --- #
     step_name = "Carregando Índice FAISS"
     start_time_step = time.time()
@@ -246,37 +316,19 @@ def load_and_process_data():
     # Assumindo por agora que ele pode ser derivado do `schema_loaded` se embeddings estiverem presentes.
     index_to_key_map = None # Precisa implementar a lógica para gerar/carregar isso
 
-    # --- Etapa 5: Analisar Estrutura de Chaves (usa schema carregado) --- #
-    step_name = "Analisando Estrutura de Chaves"
+    # --- Etapa 6: Carregar Análise de Chaves --- #
+    step_name = "Carregando Análise de Chaves"
     start_time_step = time.time()
     progress_bar.progress(float(current_step)/total_steps, text=f"({current_step+1}/{total_steps}) Executando: {step_name}...")
-    key_analysis_result = None # Inicializa
-    if analysis_file_to_load:
-        progress_bar.progress(float(current_step)/total_steps, text=f"({current_step+1}/{total_steps}) Executando: {step_name} (Carregando pré-calculado)...")
-        # Tenta carregar do arquivo
-        loaded_analysis = load_key_analysis_results(analysis_file_to_load)
-        # Verifica se o carregamento foi bem-sucedido e se é um dicionário (formato esperado do JSON)
-        if loaded_analysis and isinstance(loaded_analysis, dict):
-            # Se carregou com sucesso, DESEMPACOTA na ordem correta da tupla esperada
-            key_analysis_result = (
-                loaded_analysis.get("composite_pk_tables", {}),
-                loaded_analysis.get("junction_tables", {}),
-                loaded_analysis.get("composite_fk_details", {}),
-                loaded_analysis.get("column_roles", {})
-            )
-            logger.info("Análise de chaves carregada do arquivo e formatada como tupla.")
-        else:
-            logger.warning(f"Falha ao carregar ou formato inválido do arquivo de análise {analysis_file_to_load}. Calculando dinamicamente...")
-            key_analysis_result = analyze_key_structure(schema_loaded)
-    else:
-        logger.info("Análise de chaves pré-calculada não será carregada. Calculando dinamicamente...")
-        progress_bar.progress(float(current_step)/total_steps, text=f"({current_step+1}/{total_steps}) Executando: {step_name} (Calculando dinamicamente)...")
-        # Calcula dinamicamente se não estiver usando embeddings
-        key_analysis_result = analyze_key_structure(schema_loaded)
-        
+
+    # Tenta carregar os resultados do arquivo JSON gerado pelo script externo
+    # load_key_analysis_results retorna um dict (ou um dict padrão vazio em caso de erro/não encontrado)
+    st.session_state.key_analysis = load_key_analysis_results(config.KEY_ANALYSIS_RESULTS_FILE)
+    logger.info(f"Resultados da análise de chaves carregados de {config.KEY_ANALYSIS_RESULTS_FILE} (ou padrão vazio se falhou).")
+
     update_progress(step_name, start_time_step)
 
-    # --- Etapa 6: Inicializar Estado da Sessão --- #
+    # --- Etapa 7: Inicializar Estado da Sessão --- #
     step_name = "Inicializando Estado da Sessão"
     start_time_step = time.time()
     progress_bar.progress(float(current_step)/total_steps, text=f"({current_step+1}/{total_steps}) Executando: {step_name}...")
@@ -288,7 +340,7 @@ def load_and_process_data():
     st.session_state.overview_counts = overview_counts
     st.session_state.faiss_index = faiss_index
     st.session_state.index_to_key_map = index_to_key_map
-    st.session_state.key_analysis = key_analysis_result
+    st.session_state.ai_object_descriptions = ai_object_descriptions # Salva no estado
     logger.debug("Estados principais (metadata, technical_schema, etc.) atualizados na sessão.")
 
     # Guarda o estado inicial para comparação (APENAS se não existir ou se o save/reload resetou)

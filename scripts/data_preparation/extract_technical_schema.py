@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 # --- Constantes ---
 OUTPUT_JSON_FILE = "data/metadata/technical_schema_from_db.json" # <-- CORRIGIDO para /metadata/
 SAMPLE_SIZE = 50 # Número de amostras distintas a buscar por coluna
-MAX_WORKERS_FOR_SAMPLING = 15 # << ALTERADO: Ajustado para 15 workers
+MAX_WORKERS_FOR_SAMPLING = 50 # << ALTERADO: Ajustado para 50 workers
 
 # --- Mapeamento de Tipos Firebird (Simplificado) ---
 # Baseado em https://firebirdsql.org/refdocs/langrefupd25-system-tables-rdb-fields.html#langrefupd25-systables-rdb-flds-type
@@ -241,9 +241,17 @@ def fetch_column_samples(db_params, table_name, column_name, column_type):
 def extract_full_schema_from_db(conn, db_params):
     """Extrai o schema técnico completo, incluindo amostras (paralelizadas) e descrições, do DB."""
     # Recebe db_params para passar para as threads
-    logger.info("Iniciando extração completa do schema técnico (paralelizando amostras)...")
+    logger.info("Iniciando extração completa do schema técnico...") # Atualizado log
     # Agora a chave principal é o nome da tabela/view
-    schema_details = defaultdict(lambda: {"columns": [], "object_type": None, "description": None}) # Adiciona description no nível do objeto
+    schema_details = defaultdict(lambda: {
+        "columns": [], 
+        "object_type": None, 
+        "description": None, # Descrição técnica do DB
+        "object_business_description": None, # Descrição manual do objeto
+        "object_ai_generated_description": None, # Descrição IA do objeto
+        "object_ai_model_used": None, # Modelo IA do objeto
+        "object_ai_generation_timestamp": None # Timestamp IA do objeto
+    })
     analysis_results = {
         "composite_pk_tables": set(),
         "junction_tables": set(),
@@ -395,73 +403,12 @@ def extract_full_schema_from_db(conn, db_params):
                      # Simplificado: Pega a primeira referência encontrada. Poderia ser lista.
                      col_data["fk_references"] = fks_references.get(col_key, [])[0] if fks_references.get(col_key) else None
 
-        # Fechar cursor principal antes de iniciar threads (boa prática)
+        # Fechar cursor principal (boa prática)
         if cursor: 
             cursor.close()
             cursor = None 
             
-        # 6. Buscar Amostras de Dados em Paralelo
-        logger.info(f"Iniciando busca PARALELA por amostras ({MAX_WORKERS_FOR_SAMPLING} workers)... (Isso pode levar tempo)")
-        start_sample_time = time.time()
-        
-        tasks = []
-        columns_to_update = [] # Guardar referência para atualizar depois
-        for object_name, object_data in schema_details.items():
-            for col_data in object_data["columns"]:
-                if col_data["type"] != "BLOB": # Só busca amostra se não for BLOB
-                    tasks.append((db_params, object_name, col_data["name"], col_data["type"]))
-                    columns_to_update.append(col_data) # Guarda a referência do dict da coluna
-                else:
-                    col_data["sample_values"] = [] # Define como vazio para BLOBs
-
-        total_tasks = len(tasks)
-        logger.info(f"Total de {total_tasks} colunas para buscar amostras.")
-        processed_count = 0
-        results_map = {} # Mapear (table, column) -> samples
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS_FOR_SAMPLING) as executor:
-            # Usar map para submeter todas as tarefas e obter resultados na ordem
-            # Nota: A função fetch_column_samples agora retorna (table, column, samples)
-            future_to_task = {executor.submit(fetch_column_samples, *task): task for task in tasks}
-            
-            for future in concurrent.futures.as_completed(future_to_task):
-                try:
-                    table_name, column_name, samples = future.result()
-                    results_map[(table_name, column_name)] = samples
-                except Exception as exc:
-                    # Logar erro se a própria thread falhou catastroficamente (raro)
-                    task_info = future_to_task[future]
-                    logger.error(f'[Thread Pool Error] Task {task_info[1]}.{task_info[2]} gerou exceção: {exc}')
-                    # Marcar como erro no mapa para não tentar usar depois
-                    results_map[(task_info[1], task_info[2])] = None 
-                
-                processed_count += 1
-                if processed_count % 100 == 0 or processed_count == total_tasks:
-                     elapsed = time.time() - start_sample_time
-                     logger.info(f"  ... {processed_count}/{total_tasks} amostras processadas ({elapsed:.1f}s).")
-                     
-        end_sample_time = time.time()
-        logger.info(f"Busca paralela por amostras concluída em {end_sample_time - start_sample_time:.2f}s.")
-        
-        # 7. Atualizar schema_details com amostras coletadas
-        logger.info("Atualizando schema com as amostras coletadas...")
-        updated_count = 0
-        error_count = 0
-        for object_name, object_data in schema_details.items():
-             for col_data in object_data["columns"]:
-                  if col_data["type"] != "BLOB": # Só atualiza se não for BLOB
-                       key = (object_name, col_data["name"])
-                       if key in results_map:
-                            col_data["sample_values"] = results_map[key]
-                            if results_map[key] is not None:
-                                 updated_count += 1
-                            else: 
-                                error_count +=1 # Contabiliza erros marcados como None
-                       else:
-                            # Isso não deveria acontecer se a lógica estiver correta
-                            logger.warning(f"Resultado da amostra não encontrado para {object_name}.{col_data['name']}!")
-                            col_data["sample_values"] = None 
-        logger.info(f"Schema atualizado. Amostras preenchidas para {updated_count} colunas. Falhas/Erros em {error_count} colunas.")
+        logger.info("Pulando etapa de busca de amostras.") # <<< NOVO Log
                             
         # 8. Montar resultado final
         logger.info("Montando estrutura final do schema...")

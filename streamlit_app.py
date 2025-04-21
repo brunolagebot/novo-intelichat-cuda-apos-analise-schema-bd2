@@ -48,17 +48,18 @@ logger = logging.getLogger(__name__)
 
 # NOVO: Tentar importar a função de chat (lidar com erro se não existir)
 try:
-        OLLAMA_EMBEDDING_AVAILABLE = True
-        logger.info("Função de embedding Ollama (get_embedding) carregada.")
-    except ImportError:
-        OLLAMA_EMBEDDING_AVAILABLE = False
-        logger.warning("Função get_embedding não encontrada em src.ollama_integration.client. Busca semântica no chat desabilitada.")
-        def get_embedding(text): # Define dummy
-            st.error("Função de embedding Ollama não encontrada.")
-            return None
+    from src.ollama_integration.client import get_embedding
+    OLLAMA_EMBEDDING_AVAILABLE = True
+    logger.info("Função de embedding Ollama (get_embedding) carregada.")
+except ImportError:
+    OLLAMA_EMBEDDING_AVAILABLE = False
+    logger.warning("Função get_embedding não encontrada em src.ollama_integration.client. Busca semântica no chat desabilitada.")
+    def get_embedding(text): # Define dummy
+        st.error("Função de embedding Ollama não encontrada.")
+        return None
 
-    OLLAMA_AVAILABLE = True
-    logger.info("Integração Ollama carregada com sucesso.")
+OLLAMA_AVAILABLE = True
+logger.info("Integração Ollama carregada com sucesso.")
 
 # NOVO: Instanciar cliente Ollama e obter funções
 try:
@@ -120,14 +121,15 @@ except Exception as e:
 # --- Interface Streamlit --- #
 st.set_page_config(layout="wide", page_title="Editor de Metadados de Schema")
 
-# --- Carregamento Inicial e Inicialização do Estado --- #
-# Chama a função importada de data_loader
-init_load_start = time.perf_counter()
-logger.debug("Iniciando carregamento inicial e processamento de dados...")
-load_and_process_data()
-init_load_end = time.perf_counter()
-logger.info(f"Carregamento inicial e processamento concluído em {init_load_end - init_load_start:.4f} segundos")
-# --- FIM: Carregamento Inicial --- #
+# --- Carregamento Inicial e Inicialização do Estado (apenas na 1ª vez) --- #
+if 'metadata' not in st.session_state:
+    init_load_start = time.perf_counter()
+    logger.debug("Iniciando carregamento inicial e processamento de dados...")
+    load_and_process_data()
+    init_load_end = time.perf_counter()
+    logger.info(f"Carregamento inicial e processamento concluído em {init_load_end - init_load_start:.4f} segundos")
+else:
+    logger.debug("Estado de metadados já inicializado, pulando carregamento inicial.")
 
 # --- Referência local aos dados no estado da sessão --- #
 metadata_dict = st.session_state.metadata

@@ -16,6 +16,9 @@ import streamlit as st # Para st.secrets
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.append(ROOT_DIR)
 
+# Importar o módulo de configuração completo
+import src.core.config as config
+
 from src.core.config import (
     TECHNICAL_SCHEMA_FILE,
     KEY_ANALYSIS_RESULTS_FILE
@@ -23,6 +26,7 @@ from src.core.config import (
 # REMOVIDO: from src.core.analysis import analyze_key_structure # Movido
 # from src.analysis.analysis import analyze_key_structure # Atualizado (ainda comentado)
 from src.utils.json_helpers import load_json, save_json
+from src.core.log_utils import setup_logging
 
 # Configurar logging
 setup_logging()
@@ -132,6 +136,15 @@ def get_db_key_structure(conn):
             # Assinatura: fk_table(col1,col2...) -> pk_table(colA,colB...)
             # Usamos a assinatura lógica como chave principal para fk_definitions
             fk_signature = f"{fk_table}{fk_cols_sorted} -> {pk_table}{pk_cols_sorted}"
+
+            # --- Adicionar marcador para FKs Compostas --- 
+            is_composite_fk = len(fk_cols_sorted) > 1
+            if is_composite_fk:
+                for fk_col in details['fk_cols']:
+                    col_key_comp = format_key(fk_table, fk_col)
+                    # Adiciona o marcador sem remover outros papéis como "FK"
+                    db_struct["column_roles"][col_key_comp].add("FK_COMP_PART") 
+            # ------------------------------------------- 
 
             if fk_signature not in db_struct["fk_definitions"]:
                  db_struct["fk_definitions"][fk_signature] = {
@@ -244,16 +257,91 @@ def main():
         # 3. Preparar e Salvar Resultados
         logger.info(f"Preparando resultados para salvamento em {output_analysis_path}...")
 
+        # --- Adicionar Cálculo de Contagem de Referências (fk_reference_counts) ---
+        fk_reference_counts = defaultdict(int)
+        for fk_def in key_analysis_results["fk_definitions"].values():
+            pk_table = fk_def["pk_table"]
+            pk_cols = fk_def["pk_cols"]
+            # Para PKs simples ou compostas, contamos cada coluna PK referenciada
+            for pk_col in pk_cols:
+                 col_key = f"{pk_table}.{pk_col}" # Formato esperado pela UI
+                 fk_reference_counts[col_key] += 1
+        logger.info(f"Calculadas contagens de referência para {len(fk_reference_counts)} colunas PK.")
+
+
+        # --- Adicionar Geração de Detalhes de FKs Compostas (composite_fk_details) ---
+        composite_fk_details = {}
+        for fk_def in key_analysis_results["fk_definitions"].values():
+            # Considera FK composta se tiver mais de 1 coluna na FK
+            if len(fk_def['fk_cols']) > 1:
+                 fk_table = fk_def['fk_table']
+                 pk_table = fk_def['pk_table']
+                 fk_constraint_names = fk_def.get('constraint_names', []) # Pode haver múltiplas constraints para mesma relação lógica
+                 fk_name_display = ", ".join(fk_constraint_names) if fk_constraint_names else 'N/A'
+
+                 # Para cada coluna na FK composta, adiciona uma entrada
+                 for i, fk_col in enumerate(fk_def['fk_cols']):
+                     pk_col = fk_def['pk_cols'][i] # Assume correspondência pela ordem/posição
+                     # Chave no formato esperado pela UI
+                     detail_key = (fk_table, fk_col)
+                     composite_fk_details[detail_key] = {
+                         'fk_name': fk_name_display,
+                         'referenced_table': pk_table,
+                         'referenced_column': pk_col
+                     }
+        logger.info(f"Gerados detalhes para {len(composite_fk_details)} segmentos de FKs compostas.")
+
+        # --- Processar Roles e Níveis de Importância --- 
+        processed_column_roles = {}
+        raw_column_roles = key_analysis_results["column_roles"] # defaultdict(set)
+        composite_pk_tables_set = key_analysis_results["composite_pk_tables"] # set
+
+        for key_str, roles_set in raw_column_roles.items():
+            try:
+                table_name, _ = key_str.split(':', 1)
+            except ValueError:
+                logger.warning(f"Skipping role processing for invalid key: {key_str}")
+                continue
+
+            final_role = "Normal"
+            importance_level = "Baixa"
+
+            is_pk = "PK" in roles_set
+            is_fk = "FK" in roles_set
+            is_fk_comp_part = "FK_COMP_PART" in roles_set
+            is_pk_comp_table = table_name in composite_pk_tables_set
+
+            if is_pk and is_fk:
+                final_role = "PK/FK"
+                importance_level = "Máxima"
+            elif is_pk:
+                final_role = "PK (Comp.)" if is_pk_comp_table else "PK"
+                importance_level = "Alta"
+            elif is_fk_comp_part:
+                final_role = "FK (Comp.)"
+                importance_level = "Média"
+            elif is_fk: # Apenas FK simples (não parte de composta)
+                final_role = "FK"
+                importance_level = "Média"
+            # Se não for PK nem FK, mantém "Normal"/"Baixa"
+            
+            processed_column_roles[key_str] = {
+                 'role': final_role,
+                 'importance_level': importance_level
+             }
+        logger.info(f"Processados papéis e níveis de importância para {len(processed_column_roles)} colunas.")
+        # ------------------------------------------------- 
+
         # Estrutura final para salvar (precisa converter sets e garantir chaves string)
         # A estrutura de 'fk_definitions' já tem chaves string (assinatura)
         final_output = {
             "composite_pk_tables": sorted(list(key_analysis_results["composite_pk_tables"])),
             "junction_tables": sorted(list(key_analysis_results["junction_tables"])),
-            "composite_fk_details": key_analysis_results["fk_definitions"], # Renomeando para manter compatibilidade? Ou usar "fk_definitions"? Usar "fk_definitions" é mais claro.
-            "column_roles": {k: sorted(list(v)) for k, v in key_analysis_results["column_roles"].items()} # Converte set de roles para lista ordenada
-            # Adicionar outras informações se necessário, como 'pk_columns' e 'fk_columns' (já convertidos para lista ordenada abaixo)
-            # "pk_columns": sorted(list(key_analysis_results["pk_columns"])),
-            # "fk_columns": sorted(list(key_analysis_results["fk_columns"]))
+            "composite_fk_details": convert_tuple_keys_to_str(composite_fk_details), # Converte chaves (table, col) para string "table:col"
+            "column_roles": processed_column_roles, # USA A VERSÃO PROCESSADA!
+            "fk_reference_counts": dict(fk_reference_counts), # Converte defaultdict para dict
+            # Manter fk_definitions pode ser útil para depuração ou análises futuras
+            "_raw_fk_definitions": key_analysis_results["fk_definitions"]
         }
 
         # Aplicar conversão final (redundante se get_db_key_structure for perfeito, mas seguro)

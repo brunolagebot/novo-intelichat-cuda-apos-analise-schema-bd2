@@ -112,13 +112,17 @@ A aplicação utiliza e gera diversos arquivos na pasta `data/`. É crucial ente
 
 1.  **`data/metadata/technical_schema_from_db.json`** (Base Técnica Atual)
     *   **Origem:** Gerado pelo script `scripts/data_preparation/extract_technical_schema.py`.
-    *   **Conteúdo:** Estrutura técnica detalhada extraída diretamente do banco de dados (tabelas, views, colunas, tipos, constraints (PK/FK), defaults, descrições do DB e amostras de dados limitadas). Inclui campos pré-definidos (inicializados como `null`) para metadados manuais e de IA.
+    *   **Conteúdo:** Estrutura técnica detalhada extraída diretamente do banco de dados (tabelas, views, colunas, tipos, constraints (PK/FK), defaults, descrições do DB e amostras de dados limitadas). Inclui campos pré-definidos (inicializados como `null`) para metadados manuais e de IA **tanto para colunas quanto para objetos (tabelas/views)**.
     *   **Estrutura Esperada:**
         ```json
         {
           "NOME_DA_TABELA_OU_VIEW": {
             "object_type": "TABLE" | "VIEW",
             "description": "Descrição do objeto vinda do DB (ou null)",
+            "object_business_description": null,
+            "object_ai_generated_description": null,
+            "object_ai_model_used": null,
+            "object_ai_generation_timestamp": null,
             "columns": [
               {
                 "name": "NOME_DA_COLUNA",
@@ -385,5 +389,54 @@ python scripts/generate-ai-description-openia.py --max_items 10\
 *   **Configuração:** Evite caminhos e configurações "hardcoded". Utilize o arquivo `src/core/config.py` para constantes e `st.secrets` ou variáveis de ambiente para dados sensíveis.
 *   **Refatoração:** Se um arquivo ou função se tornar muito longo ou complexo, divida-o em unidades menores e mais gerenciáveis.
 *   **Resumo da Execução:** Ao final da execução, cada script deve imprimir um resumo claro das suas ações no console (ex: número de itens processados, arquivos lidos/escritos, erros encontrados). Isso complementa os logs detalhados.
+
+## Formato para Descrições Geradas por IA
+
+Arquivos JSON contendo descrições de tabelas e colunas geradas por ferramentas de IA (como `scripts/ai_tasks/generate-ai-description-openia.py`) devem seguir a estrutura abaixo. Estes arquivos são usados por scripts de enriquecimento (como `scripts/enrichment/apply_ai_descriptions.py`) para mesclar as descrições geradas com o schema base consolidado.
+
+O arquivo JSON deve ser uma **lista** (`list`), onde cada elemento é um **objeto** (`dict`) representando uma única descrição gerada.
+
+Cada objeto na lista deve conter as seguintes chaves:
+
+*   `object_type` (String): O tipo do objeto descrito (ex: "TABLE", "VIEW").
+*   `object_name` (String): O nome da tabela ou view à qual a descrição pertence.
+*   `column_name` (String | Null): O nome da coluna específica descrita. Se a descrição for para a tabela/view como um todo, esta chave pode estar ausente ou ser `null` (embora o script atual gere apenas para colunas).
+*   `generated_description` (String): A descrição textual gerada pela IA.
+*   `model_used` (String): O identificador do modelo de IA utilizado (ex: "gpt-3.5-turbo").
+*   `generation_timestamp` (String): Um timestamp no formato ISO 8601 (ex: "2024-08-01T10:00:00Z") indicando quando a descrição foi gerada.
+
+**Exemplo:**
+
+```json
+[
+  {
+    "object_type": "TABLE",
+    "object_name": "NOME_DA_TABELA_1",
+    "column_name": "NOME_DA_COLUNA_A",
+    "generated_description": "Descrição da Coluna A gerada por IA.",
+    "model_used": "gpt-3.5-turbo",
+    "generation_timestamp": "2024-08-01T10:00:00Z"
+  },
+  {
+    "object_type": "TABLE",
+    "object_name": "NOME_DA_TABELA_1",
+    "column_name": "NOME_DA_COLUNA_B",
+    "generated_description": "Descrição da Coluna B gerada por IA.",
+    "model_used": "gpt-3.5-turbo",
+    "generation_timestamp": "2024-08-01T10:00:05Z"
+  },
+  {
+    "object_type": "VIEW",
+    "object_name": "NOME_DA_VIEW_1",
+    "column_name": "COLUNA_X_DA_VIEW",
+    "generated_description": "Descrição da Coluna X da View 1 gerada por IA.",
+    "model_used": "gpt-3.5-turbo",
+    "generation_timestamp": "2024-08-01T10:00:10Z"
+  }
+  // ... outros objetos de descrição
+]
+```
+
+Scripts que consomem este formato (como `scripts/enrichment/apply_ai_descriptions.py`) irão iterar sobre esta lista, extrair as informações de cada objeto e mesclá-las no schema consolidado (`data/metadata/consolidated_schema.json`), procurando pela tabela/coluna correspondente no schema base.
 
 <!-- Adicionar mais seções conforme necessário: Contribuição, Licença, etc. --> 

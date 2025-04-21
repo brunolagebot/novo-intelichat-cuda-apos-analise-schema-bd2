@@ -1,0 +1,47 @@
+Estrutura
+
+Tô ficando doido com esse trem já!
+Avemarea
+
+
+
+
+
+data/		       # Todos os dados	 
+
+├── metadata/         # Arquivos de schema "mestre" ou finais
+	├── overview_counts.json            # contagem de linhas de cada das tabelas e views;
+	├── technical_schema_from_db.json   # Schema técnico extraído do DB (raramente atualizado)
+	├── manual_metadata_master.json     # << NOVO >> Arquivo MESTRE para dados manuais (business_desc, value_map) recuperado com o script recovery
+	├── ai_descriptions.json            # << MOVER/RENOMEAR >> Saída padrão das descrições AI
+	└── final_consolidated_schema.json  # << NOVO >> O resultado final unificado do fluxo perene
+
+├── ai_outputs/       # Saídas brutas/logs específicos da geração AI (se necessário, pode ser o mesmo de metadata/ai_descriptions.json)
+
+├── embeddings/       # Arquivos relacionados a embeddings (FAISS index, etc.) - já existe
+
+├── processed/        # Arquivos intermediários (tentar minimizar o uso a longo prazo)
+	└── schema_enriched_for_embedding.json # Pode ser a fonte temporária para recuperação
+
+├── backups/          # Backups de arquivos importantes antes de modificações
+├── logs/             # Logs gerais da aplicação/scripts - já existe
+├── analysis/	      # extração de arquivos para análise do banco de dados - fiz agora
+│   └──              # data/analysis/key_analysis_results.json * Este arquivo conterá apenas as informações consolidadas de: composite_pk_tables; junction_tables; fk_definitions
+└── chat/             # Arquivos de histórico/feedback do chat - já existe
+
+scripts/
+├── data_preparation/ # Scripts recorrentes para preparar/mesclar dados
+		       - scripts\data_preparation\calculate_row_counts.py # Script para contagem de linhas nas colunas e views 
+
+├── ai_tasks/         # Scripts recorrentes para tarefas de IA
+
+├── recovery/         # << NOVO >> Scripts temporários para recuperação de dados
+				# scripts/recovery/extract_manual_data.py - salvar os dados manuais existentes - gerou 
+├── database/         # Scripts relacionados ao banco de dados
+
+├── analysis/  	      # scripts para analisar os arquivos do banco de dados
+				#python -m scripts.analysis.extract_key_analysis - extrai somente as chaves
+
+├── python -m scripts.analysis.analyze_manual_metadata	- analisa o banco de dados manual (manual_metadata_master.json)
+		
+└── ... (outros diretórios existentes)

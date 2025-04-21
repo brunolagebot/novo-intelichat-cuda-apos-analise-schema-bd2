@@ -14,13 +14,16 @@ results-*/
 results-llama3-8b-chat-schema-adapter*/
 
 # Dados, logs e outputs
-data/
+data/metadata
+data/metadata_backups
+!data/ai_outputs
+data/processed
 archive/
+data/embeddings
 *.idx
 *.log
 logs/
 *.csv
-*.json
 !metadata_schema_manual.json
 *.parquet
 *.sqlite
@@ -32,6 +35,19 @@ logs/
 *.ckpt
 *.pt
 *.pth
+
+# Ignora todos os arquivos JSON 
+*.json
+!data/analysis/key_analysis_results.json
+
+# MAS, NÃO ignora este arquivo JSON específico
+!data/ai_outputs/ai_object_descriptions.json
+!data/ai_outputs
+
+
+
+# Mas NÃO ignora este arquivo específico dentro dela
+!data/ai_outputs/ai_object_descriptions.json
 
 # Arquivos de build e distribuição
 build/
@@ -72,7 +88,6 @@ temp/
 *.bak
 
 # Diretórios de output e resultados intermediários
-ai_outputs/
 embeddings/
 metadata_backups/
 processed/
